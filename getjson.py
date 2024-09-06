@@ -11,13 +11,13 @@ import sys
 BASE_URL = "http://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService"
 BASE_URLE = "http://apis.data.go.kr/1160100/service/GetSecuritiesProductInfoService"
 STOCK_BASE_URL = BASE_URL + "/getStockPriceInfo" + "?serviceKey=" + \
-    config.APT_KEY + "&numOfRows=10000&resultType=json&basDt="
+    config.API_KEY + "&numOfRows=10000&resultType=json&basDt="
 ETF_BASE_URL = BASE_URLE+"/getETFPriceInfo" + "?serviceKey=" + \
-    config.APT_KEY + "&numOfRows=10000&resultType=json&basDt="
+    config.API_KEY + "&numOfRows=10000&resultType=json&basDt="
 ELW_BASE_URL = BASE_URLE+"/getETNPriceInfo" + "?serviceKey=" + \
-    config.APT_KEY + "&numOfRows=10000&resultType=json&basDt="
+    config.API_KEY + "&numOfRows=10000&resultType=json&basDt="
 ETN_BASE_URL = BASE_URLE+"/getELWPriceInfo" + "?serviceKey=" + \
-    config.APT_KEY + "&numOfRows=10000&resultType=json&basDt="
+    config.API_KEY + "&numOfRows=10000&resultType=json&basDt="
 
 
 def savedata(date, file_paths, url):
