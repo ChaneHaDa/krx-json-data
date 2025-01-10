@@ -47,9 +47,9 @@ def get_datas(start, last):
     # 종료일까지 반복
     while start_date <= last_date:
         dates = start_date.strftime("%Y%m%d")
-        savedata(dates, "./Index/STOCK/2024/", STOCK_BASE_URL)
-        savedata(dates, "./Index/BOND/2024/", BOND_BASE_URL)
-        savedata(dates, "./Index/DERIVATION/2024/", DP_BASE_URL)
+        savedata(dates, "./Index/STOCK/2025/", STOCK_BASE_URL)
+        savedata(dates, "./Index/BOND/2025/", BOND_BASE_URL)
+        savedata(dates, "./Index/DERIVATION/2025/", DP_BASE_URL)
         # 하루 더하기
         start_date += timedelta(days=1)
 

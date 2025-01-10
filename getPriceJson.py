@@ -58,10 +58,10 @@ def get_datas(start, last):
     while start_date <= last_date:
         dates = start_date.strftime("%Y%m%d")
         # print(dates)
-        savedata(str(dates), "./Price/STOCK/2024/", STOCK_BASE_URL + str(dates))
-        savedata(str(dates), "./Price/ETF/2024/", ETF_BASE_URL + str(dates))
-        savedata(str(dates), "./Price/ETN/2024/", ETN_BASE_URL + str(dates))
-        savedata(str(dates), "./Price/ELW/2024/", ELW_BASE_URL + str(dates))
+        savedata(str(dates), "./Price/STOCK/2025/", STOCK_BASE_URL + str(dates))
+        savedata(str(dates), "./Price/ETF/2025/", ETF_BASE_URL + str(dates))
+        savedata(str(dates), "./Price/ETN/2025/", ETN_BASE_URL + str(dates))
+        savedata(str(dates), "./Price/ELW/2025/", ELW_BASE_URL + str(dates))
         # 하루 더하기
         start_date += timedelta(days=1)
 
