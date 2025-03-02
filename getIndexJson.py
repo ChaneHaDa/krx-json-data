@@ -23,7 +23,7 @@ def savedata(date, file_paths, url):
         print("no!")
 
 
-def get_obj(date, url, serviceKey=config.API_KEY):
+def get_obj(date, url, serviceKey=config.DAPI_KEY):
     time.sleep(0.3)
     params = {
         'serviceKey': serviceKey,
