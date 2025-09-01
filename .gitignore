@@ -6,3 +6,8 @@ __pycache__/
 
 config.py
 .venv
+
+
+# Ignore any depth sql-output folders and SQL files
+**/sql-output/
+*.sql

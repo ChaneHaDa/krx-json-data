@@ -1,21 +1,15 @@
 #!/usr/bin/env python3
 """
-KRX JSON 데이터를 PostgreSQL 테이블에 삽입하기 위한 월별 SQL 생성 스크립트
+KRX JSON 데이터를 PostgreSQL 테이블에 삽입하기 위한 기간별 SQL 생성 스크립트
 
-지원 테이블:
-- stock (stockinfo): 주식 기본 정보
-- index_info (indexinfo): 지수 정보  
-- stock_price (stockprice): 주식 가격 데이터
-- index_price (indexprice): 지수 가격 데이터
-- stock_name_history (stocknamehistory): 주식명 변경 이력
-
-데이터 소스:
-- ETF: ../Price/ETF/
-- STOCK: ../Price/STOCK/ 
-- Index: ../Index/STOCK/
+기존 월별 스크립트와의 차이점:
+- 여러 월의 데이터를 한 번에 처리하여 주식명 변경 이력을 완벽하게 추적
+- 월 경계를 넘나드는 이름 변경도 정확히 감지
+- 전체 기간에 대한 통합 SQL 생성
 
 사용법:
-python generate_sql_inserts.py --output-dir ./sql-output --year 2020 --month 1
+python generate_sql_range.py --start-year 2020 --start-month 4 --end-year 2020 --end-month 6
+python generate_sql_range.py --start-year 2020 --start-month 4 --end-year 2025 --end-month 1  # 전체 기간
 """
 
 import json
@@ -27,7 +21,7 @@ from typing import Dict, List, Set, Optional, Tuple
 from collections import defaultdict
 
 
-class KRXDataProcessor:
+class KRXRangeDataProcessor:
     def __init__(self, output_dir: str):
         # krx-json-data/MakeDB에서 실행되므로 상위 디렉토리가 데이터 루트
         self.data_dir = Path("../")
@@ -43,24 +37,50 @@ class KRXDataProcessor:
         self.calc_stock_prices: List[Dict] = []
         self.calc_index_prices: List[Dict] = []
         
-        # 주식명 변경 추적용 (isin_code -> {name -> first_date})
+        # 주식명 변경 추적용 (전체 기간에 대해)
         self.stock_names_tracker: Dict[str, Dict[str, str]] = {}
         
-        # 월 평균 계산용 임시 저장소
-        self.monthly_stock_data: Dict[str, List[Dict]] = {}  # isin_code -> [daily_prices]
-        self.monthly_index_data: Dict[str, List[Dict]] = {}  # index_key -> [daily_prices]
+        # 월별 평균 계산용
+        self.monthly_stock_data: Dict[Tuple[str, str], List[Dict]] = {}  # (isin_code, YYYY-MM) -> [daily_prices]
+        self.monthly_index_data: Dict[Tuple[str, str], List[Dict]] = {}  # (index_key, YYYY-MM) -> [daily_prices]
         
         # 중복 제거용 Set
         self.processed_stock_prices: Set[Tuple] = set()
         self.processed_index_prices: Set[Tuple] = set()
 
-    def process_month_data(self, year: int, month: int):
-        """특정 월의 모든 데이터 처리"""
-        print(f"Processing data for {year}-{month:02d}")
+    def process_range_data(self, start_year: int, start_month: int, end_year: int, end_month: int):
+        """특정 기간의 모든 데이터 처리"""
+        print(f"Processing data from {start_year}-{start_month:02d} to {end_year}-{end_month:02d}")
         
         # 데이터 초기화
         self.clear_data()
         
+        # 월별로 순차 처리
+        current_year, current_month = start_year, start_month
+        while (current_year < end_year) or (current_year == end_year and current_month <= end_month):
+            print(f"  Processing {current_year}-{current_month:02d}...")
+            
+            # 각 월의 데이터 처리
+            self.process_month(current_year, current_month)
+            
+            # 다음 월로 이동
+            current_month += 1
+            if current_month > 12:
+                current_month = 1
+                current_year += 1
+        
+        # StockNameHistory 데이터 생성 (전체 기간 통합)
+        self.generate_stock_name_history()
+        
+        # CalcStockPrice 및 CalcIndexPrice 데이터 생성 (월별)
+        self.generate_calc_prices()
+        
+        # SQL 생성
+        range_str = f"{start_year}{start_month:02d}_{end_year}{end_month:02d}"
+        self.generate_sql_files(range_str)
+
+    def process_month(self, year: int, month: int):
+        """특정 월의 데이터 처리"""
         # ETF 데이터 처리
         self.process_etf_data(year, month)
         
@@ -69,15 +89,6 @@ class KRXDataProcessor:
         
         # Index 데이터 처리
         self.process_index_data(year, month)
-        
-        # StockNameHistory 데이터 생성
-        self.generate_stock_name_history()
-        
-        # CalcStockPrice 및 CalcIndexPrice 데이터 생성 (월 평균)
-        self.generate_calc_prices(year, month)
-        
-        # SQL 생성
-        self.generate_sql_files(year, month)
 
     def clear_data(self):
         """데이터 초기화"""
@@ -98,7 +109,6 @@ class KRXDataProcessor:
         """ETF 데이터 처리"""
         etf_dir = self.data_dir / "Price" / "ETF" / str(year)
         if not etf_dir.exists():
-            print(f"ETF directory not found: {etf_dir}")
             return
 
         for json_file in etf_dir.glob(f"{year}{month:02d}*.json"):
@@ -111,12 +121,12 @@ class KRXDataProcessor:
                     items = [items]
                 
                 for item in items:
-                    self.process_etf_item(item)
+                    self.process_etf_item(item, year, month)
                     
             except Exception as e:
                 print(f"Error processing {json_file}: {e}")
 
-    def process_etf_item(self, item: Dict):
+    def process_etf_item(self, item: Dict, year: int, month: int):
         """ETF 항목 처리"""
         isin_cd = item.get('isinCd', '')
         srtn_cd = item.get('srtnCd', '')
@@ -126,18 +136,16 @@ class KRXDataProcessor:
         if not isin_cd or not bas_dt:
             return
             
-        # Stock 정보 저장 (ETF는 market_category를 'ETF'로 설정)
+        # Stock 정보 저장
         if isin_cd not in self.stocks:
             self.stocks[isin_cd] = {
                 'name': itms_nm,
                 'short_code': srtn_cd,
                 'isin_code': isin_cd,
-                'market_category': 'ETF',
-                'start_at': bas_dt,  # 첫 등장일
-                'end_at': None
+                'market_category': 'ETF'
             }
         
-        # 주식명 변경 이력 추적
+        # 주식명 변경 추적
         self.track_stock_name_change(isin_cd, itms_nm, bas_dt)
         
         # Stock Price 데이터 생성
@@ -157,10 +165,11 @@ class KRXDataProcessor:
             self.stock_prices.append(stock_price)
             self.processed_stock_prices.add(price_key)
             
-            # 월 평균 계산용 데이터 수집
-            if isin_cd not in self.monthly_stock_data:
-                self.monthly_stock_data[isin_cd] = []
-            self.monthly_stock_data[isin_cd].append({
+            # 월별 평균 계산용 데이터 수집
+            month_key = (isin_cd, f"{year}-{month:02d}")
+            if month_key not in self.monthly_stock_data:
+                self.monthly_stock_data[month_key] = []
+            self.monthly_stock_data[month_key].append({
                 'date': bas_dt,
                 'close_price': self.safe_int(item.get('clpr'))
             })
@@ -169,7 +178,6 @@ class KRXDataProcessor:
         """STOCK 가격 데이터 처리"""
         stock_dir = self.data_dir / "Price" / "STOCK" / str(year)
         if not stock_dir.exists():
-            print(f"STOCK price directory not found: {stock_dir}")
             return
 
         for json_file in stock_dir.glob(f"{year}{month:02d}*.json"):
@@ -182,17 +190,17 @@ class KRXDataProcessor:
                     items = [items]
                 
                 for item in items:
-                    self.process_stock_price_item(item)
+                    self.process_stock_price_item(item, year, month)
                     
             except Exception as e:
                 print(f"Error processing {json_file}: {e}")
 
-    def process_stock_price_item(self, item: Dict):
+    def process_stock_price_item(self, item: Dict, year: int, month: int):
         """STOCK 가격 항목 처리"""
         isin_cd = item.get('isinCd', '')
         srtn_cd = item.get('srtnCd', '')
         itms_nm = item.get('itmsNm', '')
-        mrkt_ctg = item.get('mrktCtg', 'KOSPI')  # 기본값
+        mrkt_ctg = item.get('mrktCtg', 'KOSPI')
         bas_dt = item.get('basDt', '')
         
         if not isin_cd or not bas_dt:
@@ -204,12 +212,10 @@ class KRXDataProcessor:
                 'name': itms_nm,
                 'short_code': srtn_cd,
                 'isin_code': isin_cd,
-                'market_category': mrkt_ctg,
-                'start_at': bas_dt,
-                'end_at': None
+                'market_category': mrkt_ctg
             }
         
-        # 주식명 변경 이력 추적
+        # 주식명 변경 추적
         self.track_stock_name_change(isin_cd, itms_nm, bas_dt)
         
         # Stock Price 데이터 생성
@@ -229,10 +235,11 @@ class KRXDataProcessor:
             self.stock_prices.append(stock_price)
             self.processed_stock_prices.add(price_key)
             
-            # 월 평균 계산용 데이터 수집
-            if isin_cd not in self.monthly_stock_data:
-                self.monthly_stock_data[isin_cd] = []
-            self.monthly_stock_data[isin_cd].append({
+            # 월별 평균 계산용 데이터 수집
+            month_key = (isin_cd, f"{year}-{month:02d}")
+            if month_key not in self.monthly_stock_data:
+                self.monthly_stock_data[month_key] = []
+            self.monthly_stock_data[month_key].append({
                 'date': bas_dt,
                 'close_price': self.safe_int(item.get('clpr'))
             })
@@ -241,7 +248,6 @@ class KRXDataProcessor:
         """지수 데이터 처리"""
         index_dir = self.data_dir / "Index" / "STOCK" / str(year)
         if not index_dir.exists():
-            print(f"Index directory not found: {index_dir}")
             return
 
         for json_file in index_dir.glob(f"{year}{month:02d}*.json"):
@@ -254,12 +260,12 @@ class KRXDataProcessor:
                     items = [items]
                 
                 for item in items:
-                    self.process_index_item(item)
+                    self.process_index_item(item, year, month)
                     
             except Exception as e:
                 print(f"Error processing {json_file}: {e}")
 
-    def process_index_item(self, item: Dict):
+    def process_index_item(self, item: Dict, year: int, month: int):
         """지수 항목 처리"""
         idx_nm = item.get('idxNm', '')
         idx_csf = item.get('idxCsf', '')
@@ -268,7 +274,6 @@ class KRXDataProcessor:
         if not idx_nm or not bas_dt:
             return
             
-        # IndexInfo 키 생성 (name + category)
         index_key = f"{idx_nm}_{idx_csf}"
         
         # IndexInfo 저장
@@ -293,16 +298,17 @@ class KRXDataProcessor:
             self.index_prices.append(index_price)
             self.processed_index_prices.add(price_key)
             
-            # 월 평균 계산용 데이터 수집
-            if index_key not in self.monthly_index_data:
-                self.monthly_index_data[index_key] = []
-            self.monthly_index_data[index_key].append({
+            # 월별 평균 계산용 데이터 수집
+            month_key = (index_key, f"{year}-{month:02d}")
+            if month_key not in self.monthly_index_data:
+                self.monthly_index_data[month_key] = []
+            self.monthly_index_data[month_key].append({
                 'date': bas_dt,
                 'close_price': self.safe_float(item.get('clpr'))
             })
 
     def track_stock_name_change(self, isin_code: str, name: str, date: str):
-        """주식명 변경 추적"""
+        """주식명 변경 추적 (전체 기간)"""
         if not name:
             return
             
@@ -318,7 +324,7 @@ class KRXDataProcessor:
             self.stock_names_tracker[isin_code][name] = date
 
     def generate_stock_name_history(self):
-        """StockNameHistory 데이터 생성"""
+        """StockNameHistory 데이터 생성 (전체 기간 통합)"""
         for isin_code, name_dates in self.stock_names_tracker.items():
             # 날짜순으로 정렬
             sorted_names = sorted(name_dates.items(), key=lambda x: x[1])
@@ -334,12 +340,10 @@ class KRXDataProcessor:
                     'end_at': end_date
                 })
 
-    def generate_calc_prices(self, year: int, month: int):
-        """CalcStockPrice 및 CalcIndexPrice 데이터 생성 (월 평균)"""
-        month_str = f"{year}-{month:02d}-01"  # 월 첫날 기준
-        
+    def generate_calc_prices(self):
+        """CalcStockPrice 및 CalcIndexPrice 데이터 생성 (월별)"""
         # CalcStockPrice 생성
-        for isin_code, daily_data in self.monthly_stock_data.items():
+        for (isin_code, year_month), daily_data in self.monthly_stock_data.items():
             if not daily_data:
                 continue
                 
@@ -349,7 +353,7 @@ class KRXDataProcessor:
             if valid_prices:
                 monthly_avg_price = sum(valid_prices) / len(valid_prices)
                 
-                # 월 수익률 계산 (첫날 대비 마지막날)
+                # 월 수익률 계산
                 first_price = valid_prices[0]
                 last_price = valid_prices[-1]
                 monthly_ror = ((last_price - first_price) / first_price * 100) if first_price > 0 else 0.0
@@ -358,11 +362,11 @@ class KRXDataProcessor:
                     'isin_code': isin_code,
                     'price': monthly_avg_price,
                     'monthly_ror': monthly_ror,
-                    'base_date': month_str
+                    'base_date': f"{year_month}-01"
                 })
         
         # CalcIndexPrice 생성  
-        for index_key, daily_data in self.monthly_index_data.items():
+        for (index_key, year_month), daily_data in self.monthly_index_data.items():
             if not daily_data:
                 continue
                 
@@ -372,7 +376,7 @@ class KRXDataProcessor:
             if valid_prices:
                 monthly_avg_price = sum(valid_prices) / len(valid_prices)
                 
-                # 월 수익률 계산 (첫날 대비 마지막날)
+                # 월 수익률 계산
                 first_price = valid_prices[0]
                 last_price = valid_prices[-1]
                 monthly_ror = ((last_price - first_price) / first_price * 100) if first_price > 0 else 0.0
@@ -381,7 +385,7 @@ class KRXDataProcessor:
                     'index_key': index_key,
                     'price': monthly_avg_price,
                     'monthly_ror': monthly_ror,
-                    'base_date': month_str
+                    'base_date': f"{year_month}-01"
                 })
 
     def safe_int(self, value) -> Optional[int]:
@@ -408,41 +412,40 @@ class KRXDataProcessor:
             return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
         return date_str
 
-    def generate_sql_files(self, year: int, month: int):
+    def generate_sql_files(self, range_str: str):
         """SQL 파일 생성"""
-        month_str = f"{year}{month:02d}"
+        print(f"Generating SQL files for range {range_str}")
         
         # Stock 데이터 SQL 생성
-        self.generate_stock_sql(month_str)
+        self.generate_stock_sql(range_str)
         
         # IndexInfo 데이터 SQL 생성
-        self.generate_index_info_sql(month_str)
+        self.generate_index_info_sql(range_str)
         
         # StockPrice 데이터 SQL 생성
-        self.generate_stock_price_sql(month_str)
+        self.generate_stock_price_sql(range_str)
         
         # IndexPrice 데이터 SQL 생성
-        self.generate_index_price_sql(month_str)
+        self.generate_index_price_sql(range_str)
         
         # StockNameHistory 데이터 SQL 생성
-        self.generate_stock_name_history_sql(month_str)
+        self.generate_stock_name_history_sql(range_str)
         
         # CalcStockPrice 데이터 SQL 생성
-        self.generate_calc_stock_price_sql(month_str)
+        self.generate_calc_stock_price_sql(range_str)
         
         # CalcIndexPrice 데이터 SQL 생성  
-        self.generate_calc_index_price_sql(month_str)
-        
-        print(f"Generated SQL files for {month_str}")
+        self.generate_calc_index_price_sql(range_str)
 
-    def generate_stock_sql(self, month_str: str):
+    def generate_stock_sql(self, range_str: str):
         """Stock 테이블 INSERT SQL 생성"""
         if not self.stocks:
             return
             
-        filename = self.output_dir / f"{month_str}_stock_insert.sql"
+        filename = self.output_dir / f"{range_str}_stock_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
             f.write("-- Stock 테이블 INSERT 문\\n")
+            f.write(f"-- Range: {range_str}\\n")
             f.write("-- Generated automatically\\n\\n")
             
             for isin_code, stock in self.stocks.items():
@@ -456,14 +459,15 @@ ON CONFLICT (isin_code) DO UPDATE SET
                 f.write(sql)
             f.write("\\n")
 
-    def generate_index_info_sql(self, month_str: str):
+    def generate_index_info_sql(self, range_str: str):
         """IndexInfo 테이블 INSERT SQL 생성"""
         if not self.indices:
             return
             
-        filename = self.output_dir / f"{month_str}_index_info_insert.sql"
+        filename = self.output_dir / f"{range_str}_index_info_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
             f.write("-- IndexInfo 테이블 INSERT 문\\n")
+            f.write(f"-- Range: {range_str}\\n")
             f.write("-- Generated automatically\\n\\n")
             
             for index_key, index_info in self.indices.items():
@@ -474,14 +478,15 @@ ON CONFLICT (name, category) DO NOTHING;
                 f.write(sql)
             f.write("\\n")
 
-    def generate_stock_price_sql(self, month_str: str):
+    def generate_stock_price_sql(self, range_str: str):
         """StockPrice 테이블 INSERT SQL 생성"""
         if not self.stock_prices:
             return
             
-        filename = self.output_dir / f"{month_str}_stock_price_insert.sql"
+        filename = self.output_dir / f"{range_str}_stock_price_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
             f.write("-- StockPrice 테이블 INSERT 문\\n")
+            f.write(f"-- Range: {range_str}\\n")
             f.write("-- Generated automatically\\n\\n")
             
             # Batch INSERT를 위한 VALUES 절 구성
@@ -512,14 +517,15 @@ ON CONFLICT (stock_id, base_date) DO NOTHING;
 
 """)
 
-    def generate_index_price_sql(self, month_str: str):
+    def generate_index_price_sql(self, range_str: str):
         """IndexPrice 테이블 INSERT SQL 생성"""
         if not self.index_prices:
             return
             
-        filename = self.output_dir / f"{month_str}_index_price_insert.sql"
+        filename = self.output_dir / f"{range_str}_index_price_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
             f.write("-- IndexPrice 테이블 INSERT 문\\n")
+            f.write(f"-- Range: {range_str}\\n")
             f.write("-- Generated automatically\\n\\n")
             
             # Batch INSERT를 위한 VALUES 절 구성
@@ -553,14 +559,15 @@ ON CONFLICT (index_info_id, base_date) DO NOTHING;
 
 """)
 
-    def generate_stock_name_history_sql(self, month_str: str):
+    def generate_stock_name_history_sql(self, range_str: str):
         """StockNameHistory 테이블 INSERT SQL 생성"""
         if not self.stock_name_history:
             return
             
-        filename = self.output_dir / f"{month_str}_stock_name_history_insert.sql"
+        filename = self.output_dir / f"{range_str}_stock_name_history_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
             f.write("-- StockNameHistory 테이블 INSERT 문\\n")
+            f.write(f"-- Range: {range_str}\\n")
             f.write("-- Generated automatically\\n\\n")
             
             # Batch INSERT를 위한 VALUES 절 구성
@@ -588,14 +595,15 @@ ON CONFLICT (stock_id, name, start_at) DO UPDATE SET
 
 """)
 
-    def generate_calc_stock_price_sql(self, month_str: str):
+    def generate_calc_stock_price_sql(self, range_str: str):
         """CalcStockPrice 테이블 INSERT SQL 생성"""
         if not self.calc_stock_prices:
             return
             
-        filename = self.output_dir / f"{month_str}_calc_stock_price_insert.sql"
+        filename = self.output_dir / f"{range_str}_calc_stock_price_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
             f.write("-- CalcStockPrice 테이블 INSERT 문\\n")
+            f.write(f"-- Range: {range_str}\\n")
             f.write("-- Generated automatically\\n\\n")
             
             # Batch INSERT를 위한 VALUES 절 구성
@@ -623,14 +631,15 @@ ON CONFLICT (stock_id, base_date) DO UPDATE SET
 
 """)
 
-    def generate_calc_index_price_sql(self, month_str: str):
+    def generate_calc_index_price_sql(self, range_str: str):
         """CalcIndexPrice 테이블 INSERT SQL 생성"""
         if not self.calc_index_prices:
             return
             
-        filename = self.output_dir / f"{month_str}_calc_index_price_insert.sql"
+        filename = self.output_dir / f"{range_str}_calc_index_price_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
             f.write("-- CalcIndexPrice 테이블 INSERT 문\\n")
+            f.write(f"-- Range: {range_str}\\n")
             f.write("-- Generated automatically\\n\\n")
             
             # Batch INSERT를 위한 VALUES 절 구성
@@ -671,21 +680,28 @@ ON CONFLICT (index_info_id, base_date) DO UPDATE SET
 
 
 def main():
-    parser = argparse.ArgumentParser(description='KRX JSON 데이터에서 PostgreSQL INSERT SQL 생성')
-    parser.add_argument('--output-dir', default='./sql-output', help='SQL 출력 디렉토리 경로 (기본값: ./sql-output)')
-    parser.add_argument('--year', type=int, required=True, help='처리할 연도')
-    parser.add_argument('--month', type=int, required=True, help='처리할 월 (1-12)')
+    parser = argparse.ArgumentParser(description='KRX JSON 데이터에서 기간별 PostgreSQL INSERT SQL 생성')
+    parser.add_argument('--output-dir', default='./sql-output', help='SQL 출력 디렉토리 경로')
+    parser.add_argument('--start-year', type=int, required=True, help='시작 연도')
+    parser.add_argument('--start-month', type=int, required=True, help='시작 월 (1-12)')
+    parser.add_argument('--end-year', type=int, required=True, help='종료 연도')
+    parser.add_argument('--end-month', type=int, required=True, help='종료 월 (1-12)')
     
     args = parser.parse_args()
     
-    if args.month < 1 or args.month > 12:
+    # 입력 검증
+    if not (1 <= args.start_month <= 12) or not (1 <= args.end_month <= 12):
         print("월은 1-12 사이의 값이어야 합니다.")
         return
+        
+    if (args.start_year > args.end_year) or (args.start_year == args.end_year and args.start_month > args.end_month):
+        print("시작 날짜가 종료 날짜보다 나중입니다.")
+        return
     
-    processor = KRXDataProcessor(args.output_dir)
-    processor.process_month_data(args.year, args.month)
+    processor = KRXRangeDataProcessor(args.output_dir)
+    processor.process_range_data(args.start_year, args.start_month, args.end_year, args.end_month)
     
-    print(f"SQL 생성 완료!")
+    print(f"\\nSQL 생성 완료!")
     print(f"Stocks: {len(processor.stocks)}")
     print(f"Indices: {len(processor.indices)}")
     print(f"Stock Prices: {len(processor.stock_prices)}")
