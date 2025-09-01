@@ -444,9 +444,9 @@ class KRXRangeDataProcessor:
             
         filename = self.output_dir / f"{range_str}_stock_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
-            f.write("-- Stock 테이블 INSERT 문\\n")
-            f.write(f"-- Range: {range_str}\\n")
-            f.write("-- Generated automatically\\n\\n")
+            f.write("-- Stock 테이블 INSERT 문\n")
+            f.write(f"-- Range: {range_str}\n")
+            f.write("-- Generated automatically\n\n")
             
             for isin_code, stock in self.stocks.items():
                 sql = f"""INSERT INTO stock (name, short_code, isin_code, market_category) 
@@ -457,7 +457,7 @@ ON CONFLICT (isin_code) DO UPDATE SET
     market_category = EXCLUDED.market_category;
 """
                 f.write(sql)
-            f.write("\\n")
+            f.write("\n")
 
     def generate_index_info_sql(self, range_str: str):
         """IndexInfo 테이블 INSERT SQL 생성"""
@@ -466,9 +466,9 @@ ON CONFLICT (isin_code) DO UPDATE SET
             
         filename = self.output_dir / f"{range_str}_index_info_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
-            f.write("-- IndexInfo 테이블 INSERT 문\\n")
-            f.write(f"-- Range: {range_str}\\n")
-            f.write("-- Generated automatically\\n\\n")
+            f.write("-- IndexInfo 테이블 INSERT 문\n")
+            f.write(f"-- Range: {range_str}\n")
+            f.write("-- Generated automatically\n\n")
             
             for index_key, index_info in self.indices.items():
                 sql = f"""INSERT INTO index_info (name, category) 
@@ -476,7 +476,7 @@ VALUES ('{self.escape_sql(index_info['name'])}', '{self.escape_sql(index_info['c
 ON CONFLICT (name, category) DO NOTHING;
 """
                 f.write(sql)
-            f.write("\\n")
+            f.write("\n")
 
     def generate_stock_price_sql(self, range_str: str):
         """StockPrice 테이블 INSERT SQL 생성"""
@@ -485,9 +485,9 @@ ON CONFLICT (name, category) DO NOTHING;
             
         filename = self.output_dir / f"{range_str}_stock_price_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
-            f.write("-- StockPrice 테이블 INSERT 문\\n")
-            f.write(f"-- Range: {range_str}\\n")
-            f.write("-- Generated automatically\\n\\n")
+            f.write("-- StockPrice 테이블 INSERT 문\n")
+            f.write(f"-- Range: {range_str}\n")
+            f.write("-- Generated automatically\n\n")
             
             # Batch INSERT를 위한 VALUES 절 구성
             batch_size = 1000
@@ -495,7 +495,7 @@ ON CONFLICT (name, category) DO NOTHING;
                 batch = self.stock_prices[i:i+batch_size]
                 
                 f.write("""INSERT INTO stock_price (close_price, open_price, low_price, high_price, trade_quantity, trade_amount, issued_count, base_date, stock_id)
-SELECT * FROM (VALUES\\n""")
+SELECT * FROM (VALUES\n""")
                 
                 values = []
                 for price in batch:
@@ -507,13 +507,12 @@ SELECT * FROM (VALUES\\n""")
                     trade_amount = price['trade_amount'] if price['trade_amount'] is not None else 'NULL'
                     issued_count = price['issued_count'] if price['issued_count'] is not None else 'NULL'
                     
-                    value = f"    ({close_price}, {open_price}, {low_price}, {high_price}, {trade_quantity}, {trade_amount}, {issued_count}, '{self.format_date(price['base_date'])}', (SELECT id FROM stock WHERE isin_code = '{price['isin_code']}'))"
+                    value = f"    ({close_price}, {open_price}, {low_price}, {high_price}, {trade_quantity}, {trade_amount}, {issued_count}, '{self.format_date(price['base_date'])}'::DATE, (SELECT id FROM stock WHERE isin_code = '{price['isin_code']}'))"
                     values.append(value)
                 
-                f.write(",\\n".join(values))
-                f.write("""\\n) AS t(close_price, open_price, low_price, high_price, trade_quantity, trade_amount, issued_count, base_date, stock_id)
-WHERE t.stock_id IS NOT NULL
-ON CONFLICT (stock_id, base_date) DO NOTHING;
+                f.write(",\n".join(values))
+                f.write("""\n) AS t(close_price, open_price, low_price, high_price, trade_quantity, trade_amount, issued_count, base_date, stock_id)
+WHERE t.stock_id IS NOT NULL;
 
 """)
 
@@ -524,9 +523,9 @@ ON CONFLICT (stock_id, base_date) DO NOTHING;
             
         filename = self.output_dir / f"{range_str}_index_price_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
-            f.write("-- IndexPrice 테이블 INSERT 문\\n")
-            f.write(f"-- Range: {range_str}\\n")
-            f.write("-- Generated automatically\\n\\n")
+            f.write("-- IndexPrice 테이블 INSERT 문\n")
+            f.write(f"-- Range: {range_str}\n")
+            f.write("-- Generated automatically\n\n")
             
             # Batch INSERT를 위한 VALUES 절 구성
             batch_size = 1000
@@ -534,7 +533,7 @@ ON CONFLICT (stock_id, base_date) DO NOTHING;
                 batch = self.index_prices[i:i+batch_size]
                 
                 f.write("""INSERT INTO index_price (close_price, open_price, low_price, high_price, yearly_diff, base_date, index_info_id)
-SELECT * FROM (VALUES\\n""")
+SELECT * FROM (VALUES\n""")
                 
                 values = []
                 for price in batch:
@@ -549,13 +548,12 @@ SELECT * FROM (VALUES\\n""")
                     name = self.escape_sql(index_info['name'])
                     category = self.escape_sql(index_info['category'])
                     
-                    value = f"    ({close_price}, {open_price}, {low_price}, {high_price}, {yearly_diff}, '{self.format_date(price['base_date'])}', (SELECT id FROM index_info WHERE name = '{name}' AND category = '{category}'))"
+                    value = f"    ({close_price}, {open_price}, {low_price}, {high_price}, {yearly_diff}, '{self.format_date(price['base_date'])}'::DATE, (SELECT id FROM index_info WHERE name = '{name}' AND category = '{category}'))"
                     values.append(value)
                 
-                f.write(",\\n".join(values))
-                f.write("""\\n) AS t(close_price, open_price, low_price, high_price, yearly_diff, base_date, index_info_id)
-WHERE t.index_info_id IS NOT NULL
-ON CONFLICT (index_info_id, base_date) DO NOTHING;
+                f.write(",\n".join(values))
+                f.write("""\n) AS t(close_price, open_price, low_price, high_price, yearly_diff, base_date, index_info_id)
+WHERE t.index_info_id IS NOT NULL;
 
 """)
 
@@ -566,9 +564,9 @@ ON CONFLICT (index_info_id, base_date) DO NOTHING;
             
         filename = self.output_dir / f"{range_str}_stock_name_history_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
-            f.write("-- StockNameHistory 테이블 INSERT 문\\n")
-            f.write(f"-- Range: {range_str}\\n")
-            f.write("-- Generated automatically\\n\\n")
+            f.write("-- StockNameHistory 테이블 INSERT 문\n")
+            f.write(f"-- Range: {range_str}\n")
+            f.write("-- Generated automatically\n\n")
             
             # Batch INSERT를 위한 VALUES 절 구성
             batch_size = 1000
@@ -576,22 +574,20 @@ ON CONFLICT (index_info_id, base_date) DO NOTHING;
                 batch = self.stock_name_history[i:i+batch_size]
                 
                 f.write("""INSERT INTO stock_name_history (name, start_at, end_at, stock_id)
-SELECT * FROM (VALUES\\n""")
+SELECT * FROM (VALUES\n""")
                 
                 values = []
                 for history in batch:
                     name = self.escape_sql(history['name'])
                     start_at = self.format_date(history['start_at'])
-                    end_at = f"'{self.format_date(history['end_at'])}'" if history['end_at'] else 'NULL'
+                    end_at = f"'{self.format_date(history['end_at'])}'::DATE" if history['end_at'] else 'NULL'
                     
-                    value = f"    ('{name}', '{start_at}', {end_at}, (SELECT id FROM stock WHERE isin_code = '{history['isin_code']}'))"
+                    value = f"    ('{name}', '{start_at}'::DATE, {end_at}, (SELECT id FROM stock WHERE isin_code = '{history['isin_code']}'))"
                     values.append(value)
                 
-                f.write(",\\n".join(values))
-                f.write("""\\n) AS t(name, start_at, end_at, stock_id)
-WHERE t.stock_id IS NOT NULL
-ON CONFLICT (stock_id, name, start_at) DO UPDATE SET
-    end_at = EXCLUDED.end_at;
+                f.write(",\n".join(values))
+                f.write("""\n) AS t(name, start_at, end_at, stock_id)
+WHERE t.stock_id IS NOT NULL;
 
 """)
 
@@ -602,9 +598,9 @@ ON CONFLICT (stock_id, name, start_at) DO UPDATE SET
             
         filename = self.output_dir / f"{range_str}_calc_stock_price_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
-            f.write("-- CalcStockPrice 테이블 INSERT 문\\n")
-            f.write(f"-- Range: {range_str}\\n")
-            f.write("-- Generated automatically\\n\\n")
+            f.write("-- CalcStockPrice 테이블 INSERT 문\n")
+            f.write(f"-- Range: {range_str}\n")
+            f.write("-- Generated automatically\n\n")
             
             # Batch INSERT를 위한 VALUES 절 구성
             batch_size = 1000
@@ -612,22 +608,19 @@ ON CONFLICT (stock_id, name, start_at) DO UPDATE SET
                 batch = self.calc_stock_prices[i:i+batch_size]
                 
                 f.write("""INSERT INTO calc_stock_price (price, monthly_ror, base_date, stock_id)
-SELECT * FROM (VALUES\\n""")
+SELECT * FROM (VALUES\n""")
                 
                 values = []
                 for calc_price in batch:
                     price = calc_price['price'] if calc_price['price'] is not None else 'NULL'
                     monthly_ror = calc_price['monthly_ror'] if calc_price['monthly_ror'] is not None else 'NULL'
                     
-                    value = f"    ({price}, {monthly_ror}, '{calc_price['base_date']}', (SELECT id FROM stock WHERE isin_code = '{calc_price['isin_code']}'))"
+                    value = f"    ({price}, {monthly_ror}, '{calc_price['base_date']}'::DATE, (SELECT id FROM stock WHERE isin_code = '{calc_price['isin_code']}'))"
                     values.append(value)
                 
-                f.write(",\\n".join(values))
-                f.write("""\\n) AS t(price, monthly_ror, base_date, stock_id)
-WHERE t.stock_id IS NOT NULL
-ON CONFLICT (stock_id, base_date) DO UPDATE SET
-    price = EXCLUDED.price,
-    monthly_ror = EXCLUDED.monthly_ror;
+                f.write(",\n".join(values))
+                f.write("""\n) AS t(price, monthly_ror, base_date, stock_id)
+WHERE t.stock_id IS NOT NULL;
 
 """)
 
@@ -638,9 +631,9 @@ ON CONFLICT (stock_id, base_date) DO UPDATE SET
             
         filename = self.output_dir / f"{range_str}_calc_index_price_insert.sql"
         with open(filename, 'w', encoding='utf-8') as f:
-            f.write("-- CalcIndexPrice 테이블 INSERT 문\\n")
-            f.write(f"-- Range: {range_str}\\n")
-            f.write("-- Generated automatically\\n\\n")
+            f.write("-- CalcIndexPrice 테이블 INSERT 문\n")
+            f.write(f"-- Range: {range_str}\n")
+            f.write("-- Generated automatically\n\n")
             
             # Batch INSERT를 위한 VALUES 절 구성
             batch_size = 1000
@@ -648,7 +641,7 @@ ON CONFLICT (stock_id, base_date) DO UPDATE SET
                 batch = self.calc_index_prices[i:i+batch_size]
                 
                 f.write("""INSERT INTO calc_index_price (price, monthly_ror, base_date, index_info_id)
-SELECT * FROM (VALUES\\n""")
+SELECT * FROM (VALUES\n""")
                 
                 values = []
                 for calc_price in batch:
@@ -660,15 +653,12 @@ SELECT * FROM (VALUES\\n""")
                     name = self.escape_sql(index_info['name'])
                     category = self.escape_sql(index_info['category'])
                     
-                    value = f"    ({price}, {monthly_ror}, '{calc_price['base_date']}', (SELECT id FROM index_info WHERE name = '{name}' AND category = '{category}'))"
+                    value = f"    ({price}, {monthly_ror}, '{calc_price['base_date']}'::DATE, (SELECT id FROM index_info WHERE name = '{name}' AND category = '{category}'))"
                     values.append(value)
                 
-                f.write(",\\n".join(values))
-                f.write("""\\n) AS t(price, monthly_ror, base_date, index_info_id)
-WHERE t.index_info_id IS NOT NULL
-ON CONFLICT (index_info_id, base_date) DO UPDATE SET
-    price = EXCLUDED.price,
-    monthly_ror = EXCLUDED.monthly_ror;
+                f.write(",\n".join(values))
+                f.write("""\n) AS t(price, monthly_ror, base_date, index_info_id)
+WHERE t.index_info_id IS NOT NULL;
 
 """)
 
@@ -701,7 +691,7 @@ def main():
     processor = KRXRangeDataProcessor(args.output_dir)
     processor.process_range_data(args.start_year, args.start_month, args.end_year, args.end_month)
     
-    print(f"\\nSQL 생성 완료!")
+    print(f"\nSQL 생성 완료!")
     print(f"Stocks: {len(processor.stocks)}")
     print(f"Indices: {len(processor.indices)}")
     print(f"Stock Prices: {len(processor.stock_prices)}")
