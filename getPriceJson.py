@@ -10,14 +10,34 @@ import sys
 
 BASE_URL = "http://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService"
 BASE_URLE = "http://apis.data.go.kr/1160100/service/GetSecuritiesProductInfoService"
-STOCK_BASE_URL = BASE_URL + "/getStockPriceInfo" + "?serviceKey=" + \
-    config.API_KEY + "&numOfRows=10000&resultType=json&basDt="
-ETF_BASE_URL = BASE_URLE+"/getETFPriceInfo" + "?serviceKey=" + \
-    config.API_KEY + "&numOfRows=10000&resultType=json&basDt="
-ELW_BASE_URL = BASE_URLE+"/getETNPriceInfo" + "?serviceKey=" + \
-    config.API_KEY + "&numOfRows=10000&resultType=json&basDt="
-ETN_BASE_URL = BASE_URLE+"/getELWPriceInfo" + "?serviceKey=" + \
-    config.API_KEY + "&numOfRows=10000&resultType=json&basDt="
+STOCK_BASE_URL = (
+    BASE_URL
+    + "/getStockPriceInfo"
+    + "?serviceKey="
+    + config.API_KEY
+    + "&numOfRows=10000&resultType=json&basDt="
+)
+ETF_BASE_URL = (
+    BASE_URLE
+    + "/getETFPriceInfo"
+    + "?serviceKey="
+    + config.API_KEY
+    + "&numOfRows=10000&resultType=json&basDt="
+)
+ELW_BASE_URL = (
+    BASE_URLE
+    + "/getETNPriceInfo"
+    + "?serviceKey="
+    + config.API_KEY
+    + "&numOfRows=10000&resultType=json&basDt="
+)
+ETN_BASE_URL = (
+    BASE_URLE
+    + "/getELWPriceInfo"
+    + "?serviceKey="
+    + config.API_KEY
+    + "&numOfRows=10000&resultType=json&basDt="
+)
 
 
 def savedata(date, file_paths, url):
@@ -26,7 +46,7 @@ def savedata(date, file_paths, url):
     datalist = data.get("response").get("body").get("items").get("item")
     if len(datalist) > 1:
         print("yes!")
-        with open(file_path, 'w', encoding='utf-8') as file:
+        with open(file_path, "w", encoding="utf-8") as file:
             json.dump(data, file)
     else:
         print("no!")
@@ -45,8 +65,7 @@ def get_json(date):
         data = json.load(f)
         datalist = data.get("response").get("body").get("items").get("item")
         for i in datalist:
-            print(i.get("itmsNm") + " " +
-                  i.get("mrktCtg") + " " + i.get("srtnCd"))
+            print(i.get("itmsNm") + " " + i.get("mrktCtg") + " " + i.get("srtnCd"))
 
 
 def get_datas(start, last):
@@ -58,10 +77,10 @@ def get_datas(start, last):
     while start_date <= last_date:
         dates = start_date.strftime("%Y%m%d")
         # print(dates)
-        savedata(str(dates), "./Price/STOCK/2025/", STOCK_BASE_URL + str(dates))
-        savedata(str(dates), "./Price/ETF/2025/", ETF_BASE_URL + str(dates))
-        savedata(str(dates), "./Price/ETN/2025/", ETN_BASE_URL + str(dates))
-        savedata(str(dates), "./Price/ELW/2025/", ELW_BASE_URL + str(dates))
+        savedata(str(dates), "./Price/STOCK/2026/", STOCK_BASE_URL + str(dates))
+        savedata(str(dates), "./Price/ETF/2026/", ETF_BASE_URL + str(dates))
+        savedata(str(dates), "./Price/ETN/2026/", ETN_BASE_URL + str(dates))
+        savedata(str(dates), "./Price/ELW/2026/", ELW_BASE_URL + str(dates))
         # 하루 더하기
         start_date += timedelta(days=1)
 
