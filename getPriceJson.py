@@ -1,4 +1,5 @@
 import json
+import os
 from xmlrpc.server import DocCGIXMLRPCRequestHandler
 from bs4 import BeautifulSoup
 import requests
@@ -26,14 +27,14 @@ ETF_BASE_URL = (
 )
 ELW_BASE_URL = (
     BASE_URLE
-    + "/getETNPriceInfo"
+    + "/getELWPriceInfo"
     + "?serviceKey="
     + config.API_KEY
     + "&numOfRows=10000&resultType=json&basDt="
 )
 ETN_BASE_URL = (
     BASE_URLE
-    + "/getELWPriceInfo"
+    + "/getETNPriceInfo"
     + "?serviceKey="
     + config.API_KEY
     + "&numOfRows=10000&resultType=json&basDt="
@@ -76,11 +77,21 @@ def get_datas(start, last):
     # 종료일 까지 반복
     while start_date <= last_date:
         dates = start_date.strftime("%Y%m%d")
-        # print(dates)
-        savedata(str(dates), "./Price/STOCK/2026/", STOCK_BASE_URL + str(dates))
-        savedata(str(dates), "./Price/ETF/2026/", ETF_BASE_URL + str(dates))
-        savedata(str(dates), "./Price/ETN/2026/", ETN_BASE_URL + str(dates))
-        savedata(str(dates), "./Price/ELW/2026/", ELW_BASE_URL + str(dates))
+        year = dates[:4]
+        stock_dir = f"./Price/STOCK/{year}/"
+        etf_dir = f"./Price/ETF/{year}/"
+        etn_dir = f"./Price/ETN/{year}/"
+        elw_dir = f"./Price/ELW/{year}/"
+
+        os.makedirs(stock_dir, exist_ok=True)
+        os.makedirs(etf_dir, exist_ok=True)
+        os.makedirs(etn_dir, exist_ok=True)
+        os.makedirs(elw_dir, exist_ok=True)
+
+        savedata(str(dates), stock_dir, STOCK_BASE_URL + str(dates))
+        savedata(str(dates), etf_dir, ETF_BASE_URL + str(dates))
+        savedata(str(dates), etn_dir, ETN_BASE_URL + str(dates))
+        savedata(str(dates), elw_dir, ELW_BASE_URL + str(dates))
         # 하루 더하기
         start_date += timedelta(days=1)
 
