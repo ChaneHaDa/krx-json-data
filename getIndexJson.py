@@ -1,4 +1,5 @@
 import json
+import os
 import requests
 from urllib.request import urlopen
 import config
@@ -49,9 +50,18 @@ def get_datas(start, last):
     # 종료일까지 반복
     while start_date <= last_date:
         dates = start_date.strftime("%Y%m%d")
-        savedata(dates, "./Index/STOCK/2026/", STOCK_BASE_URL)
-        savedata(dates, "./Index/BOND/2026/", BOND_BASE_URL)
-        savedata(dates, "./Index/DERIVATION/2026/", DP_BASE_URL)
+        year = dates[:4]
+        stock_dir = f"./Index/STOCK/{year}/"
+        bond_dir = f"./Index/BOND/{year}/"
+        derivation_dir = f"./Index/DERIVATION/{year}/"
+
+        os.makedirs(stock_dir, exist_ok=True)
+        os.makedirs(bond_dir, exist_ok=True)
+        os.makedirs(derivation_dir, exist_ok=True)
+
+        savedata(dates, stock_dir, STOCK_BASE_URL)
+        savedata(dates, bond_dir, BOND_BASE_URL)
+        savedata(dates, derivation_dir, DP_BASE_URL)
         # 하루 더하기
         start_date += timedelta(days=1)
 

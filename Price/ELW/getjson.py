@@ -5,12 +5,15 @@ from bs4 import BeautifulSoup
 import requests
 import config
 import time
+import os
 from datetime import datetime, timedelta
 
 
 def savedata(date):
     data = get_obj(date)
-    file_path = "./2024/" + date + ".json"
+    year = date[:4]
+    os.makedirs(f"./{year}/", exist_ok=True)
+    file_path = f"./{year}/{date}.json"
     datalist = data.get("response").get("body").get("items").get("item")
     if len(datalist) > 1:
         print("yes!")
@@ -23,7 +26,7 @@ def savedata(date):
 def get_obj(date):
     time.sleep(0.3)
     url = "http://apis.data.go.kr/1160100/service/GetSecuritiesProductInfoService/getELWPriceInfo?serviceKey=" + \
-        config.APT_KEY + "&numOfRows=10000&resultType=json&basDt=" + date
+        config.API_KEY + "&numOfRows=10000&resultType=json&basDt=" + date
     result = requests.get(url, verify=False).text
     data = json.loads(result)
     return data
