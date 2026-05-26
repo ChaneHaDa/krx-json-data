@@ -153,8 +153,13 @@ def main():
     except subprocess.CalledProcessError as exc:
         return exc.returncode
 
-    write_state(end_date)
-    print(f"Saved last run date: {format_date(end_date)}")
+    saved_date = latest_data_date()
+    if saved_date is None:
+        print("No saved data date found after collectors completed.")
+        return 1
+
+    write_state(saved_date)
+    print(f"Saved last run date: {format_date(saved_date)}")
     return 0
 
 
