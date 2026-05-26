@@ -6,6 +6,7 @@ __pycache__/
 
 config.py
 .venv
+.last_run.json
 
 
 # Ignore any depth sql-output folders and SQL files

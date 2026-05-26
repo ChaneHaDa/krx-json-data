@@ -16,7 +16,7 @@ Make the two existing collection scripts easier to run together. A single comman
 Use a small tracked runner script plus an untracked state file:
 
 - Prefer a state file, `.last_run.json`, when it exists.
-- If the state file does not exist or lacks a usable date, infer the latest date from saved JSON filenames under `Price` and `Index`.
+- If the state file does not exist or lacks a usable date, infer the latest date from saved JSON filenames under `Price` and `Index`; use the older of those two root-level latest dates so a lagging dataset is not skipped.
 - Start from the day after the resolved last date.
 - End at the local current date in `Asia/Seoul`, formatted as `YYYYMMDD`.
 - Run `getPriceJson.py` and `getIndexJson.py` for the same computed range.
