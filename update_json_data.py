@@ -64,6 +64,20 @@ def latest_data_date(roots=DATA_ROOTS):
     return min(latest_by_root)
 
 
+def json_data_files(roots=None):
+    if roots is None:
+        roots = DATA_ROOTS
+
+    files = []
+
+    for root in roots:
+        if not root.exists():
+            continue
+        files.extend(path for path in root.rglob("*.json") if path.is_file())
+
+    return sorted(files)
+
+
 def write_state(end_date, state_file=STATE_FILE):
     payload = {"last_run_date": format_date(end_date)}
     state_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -109,6 +123,73 @@ def print_collector_commands(start_date, end_date):
         )
 
 
+def run_git(command, cwd=None, display=None):
+    if display is None:
+        display = "git " + " ".join(command)
+    print("$ " + display)
+    return subprocess.run(["git", *command], cwd=cwd, check=True)
+
+
+def has_staged_changes(cwd=None):
+    result = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=cwd)
+    return result.returncode == 1
+
+
+def changed_json_data_files(cwd=None, roots=None):
+    if roots is None:
+        roots = DATA_ROOTS
+
+    result = subprocess.run(
+        [
+            "git",
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+            "--",
+            *[str(root) for root in roots],
+        ],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    files = []
+
+    for line in result.stdout.splitlines():
+        path = line[3:]
+        if path.endswith(".json"):
+            files.append(Path(path))
+
+    return sorted(files)
+
+
+def commit_data_changes(last_run_date, cwd=None):
+    files = changed_json_data_files(cwd=cwd)
+    if not files:
+        print("No JSON data changes to commit.")
+        return False
+
+    run_git(
+        ["add", *[str(path) for path in files]],
+        cwd=cwd,
+        display=f"git add {len(files)} JSON data file(s)",
+    )
+
+    if not has_staged_changes(cwd=cwd):
+        print("No JSON data changes to commit.")
+        return False
+
+    run_git(
+        ["commit", "-m", f"data: update krx json through {last_run_date}"],
+        cwd=cwd,
+    )
+    return True
+
+
+def push_current_branch(cwd=None):
+    run_git(["push", "origin", "HEAD"], cwd=cwd)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Update KRX price and index JSON data through today."
@@ -126,6 +207,16 @@ def build_parser():
         "--dry-run",
         action="store_true",
         help="Print the computed range and commands without running collectors.",
+    )
+    parser.add_argument(
+        "--commit",
+        action="store_true",
+        help="Commit JSON data changes after collectors finish successfully.",
+    )
+    parser.add_argument(
+        "--push",
+        action="store_true",
+        help="Push the current branch after committing data changes.",
     )
     return parser
 
@@ -145,6 +236,11 @@ def main():
 
     if args.dry_run:
         print_collector_commands(start_date, end_date)
+        if args.commit:
+            print("$ git add changed Price/Index JSON data files")
+            print(f"$ git commit -m data: update krx json through {format_date(end_date)}")
+        if args.push:
+            print("$ git push origin HEAD")
         return 0
 
     try:
@@ -160,6 +256,17 @@ def main():
 
     write_state(saved_date)
     print(f"Saved last run date: {format_date(saved_date)}")
+
+    committed = False
+    if args.commit:
+        committed = commit_data_changes(format_date(saved_date))
+
+    if args.push:
+        if args.commit and not committed:
+            print("Skipping push because no data commit was created.")
+            return 0
+        push_current_branch()
+
     return 0
 
 
