@@ -7,7 +7,7 @@ Keep code outside the output directory. The `--overwrite` option deletes the
 output directory before writing new Parquet files.
 
 ```bash
-python3 AdjustedPrice/get_pykrx_adjusted.py \
+uv run python AdjustedPrice/get_pykrx_adjusted.py \
   --from-date 20240101 \
   --to-date 20241231 \
   --tickers 069500,360750,453850,114260,411060,160580 \

@@ -156,6 +156,14 @@ def build_frames(
             )
             if not frame.empty:
                 frames.append(frame)
+            else:
+                failures.append(
+                    {
+                        "ticker": ticker,
+                        "attempts": 1,
+                        "error": "empty result",
+                    }
+                )
 
         if sleep_seconds > 0 and index < len(tickers) - 1:
             sleep(sleep_seconds)
@@ -214,7 +222,7 @@ def build_adjusted_prices(
         sleep_seconds=sleep_seconds,
         retry_count=retry_count,
     )
-    if result.failures and not allow_partial:
+    if result.failures and (not allow_partial or not result.frames):
         write_manifest(
             manifest_path,
             make_manifest(

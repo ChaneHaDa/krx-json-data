@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -83,6 +84,53 @@ class AdjustedPricePykrxTests(unittest.TestCase):
                 list(output_dir.glob("source=pykrx/asset_type=ETF/year=2024/month=01/*.parquet"))
             )
             self.assertTrue(manifest_path.exists())
+
+    def test_build_adjusted_prices_records_empty_ticker_as_failure(self):
+        def empty_fetcher(from_date, to_date, ticker):
+            return pd.DataFrame()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = root / "AdjustedPrice" / "pykrx_manifest.json"
+
+            with self.assertRaises(RuntimeError):
+                adjusted.build_adjusted_prices(
+                    ["069500"],
+                    from_date="20240101",
+                    to_date="20240103",
+                    output_dir=root / "AdjustedPrice" / "pykrx",
+                    manifest_path=manifest_path,
+                    fetcher=empty_fetcher,
+                    sleep_seconds=0,
+                )
+
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertIn("069500", manifest["failures"])
+            self.assertEqual(manifest["failures"]["069500"]["error"], "empty result")
+
+    def test_allow_partial_still_fails_when_no_tickers_succeed(self):
+        def failing_fetcher(from_date, to_date, ticker):
+            raise RuntimeError("network down")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = root / "AdjustedPrice" / "pykrx_manifest.json"
+
+            with self.assertRaises(RuntimeError):
+                adjusted.build_adjusted_prices(
+                    ["069500"],
+                    from_date="20240101",
+                    to_date="20240103",
+                    output_dir=root / "AdjustedPrice" / "pykrx",
+                    manifest_path=manifest_path,
+                    fetcher=failing_fetcher,
+                    sleep_seconds=0,
+                    retry_count=0,
+                    allow_partial=True,
+                )
+
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertIn("069500", manifest["failures"])
 
 
 if __name__ == "__main__":

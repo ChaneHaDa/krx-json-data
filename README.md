@@ -1,9 +1,9 @@
 # krx-json-data
 
 ## 패키지 설치
-다음의 명령어로 필요한 패키지 설치 가능
+uv로 필요한 패키지를 설치한다.
 ```bash
-pip3 install -r requirements.txt
+uv sync
 ```
 
 ## config.py
@@ -23,7 +23,7 @@ json파일을 불러와서 달 평균 종가 데이터를 구성하는 코드
 OHLCV를 수집해 Parquet 데이터셋으로 저장한다.
 
 ```bash
-python3 AdjustedPrice/get_pykrx_adjusted.py \
+uv run python AdjustedPrice/get_pykrx_adjusted.py \
   --from-date 20240101 \
   --to-date 20241231 \
   --tickers 069500,360750,453850,114260,411060,160580 \
@@ -42,3 +42,9 @@ AdjustedPrice/pykrx_manifest.json
 
 `Price/*` 폴더는 KRX 원천 JSON이고, `AdjustedPrice/pykrx`는 pykrx/Naver
 기반 파생 연구 데이터다.
+
+테스트는 다음처럼 실행한다.
+
+```bash
+uv run python -m unittest discover -s tests
+```
