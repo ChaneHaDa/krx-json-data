@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -175,6 +176,90 @@ class AdjustedPricePykrxTests(unittest.TestCase):
             written = pd.read_parquet(output_dir)
             self.assertEqual(set(written["asset_type"].astype(str)), {"STOCK", "ETF"})
             self.assertEqual(set(written["ticker"].astype(str)), {"005930", "069500"})
+
+    def test_incremental_dates_start_after_latest_asset_type_date(self):
+        stock_frame = pd.DataFrame(
+            {"종가": [1000]},
+            index=pd.Index([pd.Timestamp("2024-01-02")], name="날짜"),
+        )
+        etf_frame = pd.DataFrame(
+            {"종가": [2000]},
+            index=pd.Index([pd.Timestamp("2024-01-05")], name="날짜"),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "AdjustedPrice" / "pykrx"
+            adjusted.write_adjusted_prices(
+                [
+                    adjusted.normalize_pykrx_ohlcv(
+                        stock_frame,
+                        ticker="005930",
+                        asset_type="STOCK",
+                        source_loaded_at="2026-06-01T00:00:00+00:00",
+                    ),
+                    adjusted.normalize_pykrx_ohlcv(
+                        etf_frame,
+                        ticker="069500",
+                        asset_type="ETF",
+                        source_loaded_at="2026-06-01T00:00:00+00:00",
+                    ),
+                ],
+                output_dir=output_dir,
+            )
+
+            from_date, to_date = adjusted.resolve_collection_dates(
+                from_date=None,
+                to_date=None,
+                output_dir=output_dir,
+                asset_type="STOCK",
+                incremental=True,
+                today=date(2024, 1, 10),
+            )
+
+            self.assertEqual(from_date, "20240103")
+            self.assertEqual(to_date, "20240110")
+
+    def test_incremental_append_keeps_existing_rows(self):
+        original_frame = pd.DataFrame(
+            {"종가": [1000]},
+            index=pd.Index([pd.Timestamp("2024-01-02")], name="날짜"),
+        )
+        new_frame = pd.DataFrame(
+            {"종가": [1100]},
+            index=pd.Index([pd.Timestamp("2024-01-03")], name="날짜"),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_dir = root / "AdjustedPrice" / "pykrx"
+            manifest_path = root / "AdjustedPrice" / "pykrx_manifest.json"
+            adjusted.write_adjusted_prices(
+                [
+                    adjusted.normalize_pykrx_ohlcv(
+                        original_frame,
+                        ticker="005930",
+                        asset_type="STOCK",
+                        source_loaded_at="2026-06-01T00:00:00+00:00",
+                    )
+                ],
+                output_dir=output_dir,
+            )
+
+            rows = adjusted.build_adjusted_prices(
+                ["005930"],
+                from_date="20240103",
+                to_date="20240103",
+                asset_type="STOCK",
+                output_dir=output_dir,
+                manifest_path=manifest_path,
+                fetcher=lambda from_date, to_date, ticker: new_frame,
+                sleep_seconds=0,
+                append=True,
+            )
+
+            written = pd.read_parquet(output_dir)
+            self.assertEqual(rows, 1)
+            self.assertEqual(set(written["date"].dt.strftime("%Y%m%d")), {"20240102", "20240103"})
 
 
 if __name__ == "__main__":

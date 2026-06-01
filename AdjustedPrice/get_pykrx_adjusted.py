@@ -4,7 +4,7 @@ import argparse
 import json
 import shutil
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from time import sleep
 from typing import Callable, Optional
@@ -204,6 +204,63 @@ def write_adjusted_prices(
     return len(adjusted_prices)
 
 
+def latest_dataset_date(
+    output_dir: Path,
+    *,
+    asset_type: str,
+    source: str = "pykrx",
+) -> Optional[pd.Timestamp]:
+    partition_dir = output_dir / f"source={source}" / f"asset_type={asset_type}"
+    if not partition_dir.exists():
+        return None
+
+    try:
+        data = pd.read_parquet(partition_dir, columns=["date"])
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    if data.empty:
+        return None
+
+    latest = pd.to_datetime(data["date"], errors="coerce").max()
+    if pd.isna(latest):
+        return None
+    return pd.Timestamp(latest)
+
+
+def normalize_collection_date(value: str) -> str:
+    parsed = datetime.strptime(value, "%Y%m%d")
+    return parsed.strftime("%Y%m%d")
+
+
+def resolve_collection_dates(
+    *,
+    from_date: Optional[str],
+    to_date: Optional[str],
+    output_dir: Path,
+    asset_type: str,
+    incremental: bool = False,
+    today: Optional[date] = None,
+) -> tuple[str, str]:
+    end_date = (
+        normalize_collection_date(to_date)
+        if to_date
+        else (today or date.today()).strftime("%Y%m%d")
+    )
+    if not incremental:
+        if not from_date:
+            raise ValueError("--from-date is required unless --incremental is set")
+        return normalize_collection_date(from_date), end_date
+
+    latest = latest_dataset_date(output_dir, asset_type=asset_type)
+    if latest is None:
+        if not from_date:
+            raise ValueError("--from-date is required for the first incremental run")
+        return normalize_collection_date(from_date), end_date
+
+    start = (latest.date() + timedelta(days=1)).strftime("%Y%m%d")
+    return start, end_date
+
+
 def build_adjusted_prices(
     tickers: list[str],
     *,
@@ -218,6 +275,7 @@ def build_adjusted_prices(
     retry_count: int = 2,
     overwrite: bool = False,
     overwrite_asset_type: bool = False,
+    append: bool = False,
     allow_partial: bool = False,
 ) -> int:
     result = build_frames(
@@ -247,7 +305,7 @@ def build_adjusted_prices(
         output_dir=output_dir,
         overwrite=overwrite,
         overwrite_asset_type=overwrite_asset_type,
-        append=False,
+        append=append,
     )
     write_manifest(
         manifest_path,
@@ -317,8 +375,8 @@ def read_ticker_names(path: Path) -> dict[str, str]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build adjusted prices from pykrx")
-    parser.add_argument("--from-date", required=True, help="Start date in YYYYMMDD")
-    parser.add_argument("--to-date", required=True, help="End date in YYYYMMDD")
+    parser.add_argument("--from-date", default="", help="Start date in YYYYMMDD")
+    parser.add_argument("--to-date", default="", help="End date in YYYYMMDD. Defaults to today.")
     parser.add_argument("--tickers", required=True, help="Comma-separated ticker list")
     parser.add_argument("--ticker-names-file", default="", help="CSV/TSV ticker,name file")
     parser.add_argument("--asset-type", default="ETF", choices=["STOCK", "ETF"])
@@ -328,28 +386,45 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--retry-count", type=int, default=2)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--overwrite-asset-type", action="store_true")
+    parser.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Append from the latest stored date plus one day",
+    )
     parser.add_argument("--allow-partial", action="store_true")
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
+    output_dir = Path(args.output_dir)
+    from_date, to_date = resolve_collection_dates(
+        from_date=args.from_date or None,
+        to_date=args.to_date or None,
+        output_dir=output_dir,
+        asset_type=args.asset_type,
+        incremental=args.incremental,
+    )
+    if from_date > to_date:
+        print(f"Done. rows=0, output={args.output_dir}, range={from_date}..{to_date}")
+        return 0
     names = read_ticker_names(Path(args.ticker_names_file)) if args.ticker_names_file else {}
     rows = build_adjusted_prices(
         parse_tickers(args.tickers),
-        from_date=args.from_date,
-        to_date=args.to_date,
+        from_date=from_date,
+        to_date=to_date,
         ticker_names=names,
         asset_type=args.asset_type,
-        output_dir=Path(args.output_dir),
+        output_dir=output_dir,
         manifest_path=Path(args.manifest_path),
         sleep_seconds=args.sleep_seconds,
         retry_count=args.retry_count,
         overwrite=args.overwrite,
         overwrite_asset_type=args.overwrite_asset_type,
+        append=args.incremental,
         allow_partial=args.allow_partial,
     )
-    print(f"Done. rows={rows}, output={args.output_dir}")
+    print(f"Done. rows={rows}, output={args.output_dir}, range={from_date}..{to_date}")
     return 0
 
 

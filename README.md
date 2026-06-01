@@ -51,14 +51,30 @@ parquet/all/etf/asset_type=ETF/year=YYYY/month=MM/*.parquet
 `AdjustedPrice/get_pykrx_adjusted.py`는 pykrx의 `adjusted=True` 경로로 수정주가
 OHLCV를 수집해 Parquet 데이터셋으로 저장한다.
 
+평소 업데이트는 `--incremental`을 사용한다. 기존 `AdjustedPrice/pykrx` 데이터셋에서
+해당 asset type의 마지막 저장일을 읽고, 그 다음날부터 `--to-date`까지 append한다.
+`--to-date`를 생략하면 실행일 기준 오늘까지 수집한다.
+
 ```bash
 uv run python AdjustedPrice/get_pykrx_adjusted.py \
-  --from-date 20240101 \
-  --to-date 20241231 \
+  --tickers 005930,000660,035420 \
+  --asset-type STOCK \
+  --manifest-path AdjustedPrice/pykrx_stock_manifest.json \
+  --incremental \
+  --sleep-seconds 0.6 \
+  --allow-partial
+```
+
+첫 수집처럼 기존 데이터가 없는 경우에는 `--incremental`과 함께 `--from-date`를 지정한다.
+
+```bash
+uv run python AdjustedPrice/get_pykrx_adjusted.py \
+  --from-date 20140307 \
   --tickers 069500,360750,453850,114260,411060,160580 \
   --ticker-names-file configs/tickers/all_weather_kr_etf.csv \
   --asset-type ETF \
-  --overwrite-asset-type \
+  --manifest-path AdjustedPrice/pykrx_etf_manifest.json \
+  --incremental \
   --sleep-seconds 0.6 \
   --allow-partial
 ```
