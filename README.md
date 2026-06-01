@@ -13,6 +13,14 @@ git lfs install
 git lfs pull
 ```
 
+Git LFS 추적 대상:
+
+```text
+Price/**/*.json
+Index/**/*.json
+AdjustedPrice/**/*.parquet
+```
+
 ## config.py
 ```python
 API_KEY ="여기에 키를 입력하세요~"
@@ -58,6 +66,16 @@ AdjustedPrice/pykrx_etf_manifest.json
 
 `Price/*` 폴더는 KRX 원천 JSON이고, `AdjustedPrice/pykrx`는 pykrx/Naver
 기반 파생 연구 데이터다.
+
+## 데이터 저장 구조
+
+- `Price/<ASSET_TYPE>/<YYYY>/<YYYYMMDD>.json`: KRX 일별 원천 가격 JSON
+- `Index/<ASSET_TYPE>/<YYYY>/<YYYYMMDD>.json`: KRX 일별 지수/시장 관련 JSON
+- `AdjustedPrice/pykrx/source=pykrx/asset_type=<STOCK|ETF>/year=<YYYY>/month=<MM>/*.parquet`: pykrx 수정주가 Parquet 데이터셋
+- `AdjustedPrice/pykrx_*_manifest.json`: 수정주가 수집 성공/실패 manifest
+
+JSON과 Parquet 데이터 파일은 저장소에는 LFS 포인터로 올라가며, 실제 데이터는
+`git lfs pull`로 내려받는다. manifest와 수집 스크립트는 일반 Git 파일로 관리한다.
 
 테스트는 다음처럼 실행한다.
 

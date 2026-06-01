@@ -6,6 +6,9 @@ partitioned Parquet dataset.
 Keep code outside the output directory. The `--overwrite` option deletes the
 output directory before writing new Parquet files.
 
+Parquet outputs under `AdjustedPrice/pykrx` are tracked with Git LFS. Manifests
+stay as regular Git-tracked JSON files.
+
 ```bash
 uv run python AdjustedPrice/get_pykrx_adjusted.py \
   --from-date 20240101 \
