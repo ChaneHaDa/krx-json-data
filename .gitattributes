@@ -1,3 +1,4 @@
 AdjustedPrice/**/*.parquet filter=lfs diff=lfs merge=lfs -text
 Price/**/*.json filter=lfs diff=lfs merge=lfs -text
 Index/**/*.json filter=lfs diff=lfs merge=lfs -text
+parquet/**/*.parquet filter=lfs diff=lfs merge=lfs -text

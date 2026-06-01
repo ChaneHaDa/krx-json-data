@@ -77,6 +77,13 @@ def normalize_item(item: Dict[str, Any], asset_type: str, source_file: str) -> D
     return row
 
 
+def source_file_path(json_file: Path, source_root: Path) -> str:
+    try:
+        return json_file.resolve().relative_to(source_root.resolve()).as_posix()
+    except ValueError:
+        return json_file.as_posix()
+
+
 def iter_json_files(input_dir: Path, limit: Optional[int]) -> Iterable[Path]:
     files = sorted(input_dir.rglob("*.json"))
     if limit is not None:
@@ -89,6 +96,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input-dir", required=True, help="Input directory that contains JSON files")
     parser.add_argument("--output-dir", required=True, help="Output directory for Parquet files")
     parser.add_argument("--asset-type", required=True, help="Asset type label (e.g. STOCK, ETF, ETN, ELW, INDEX_STOCK)")
+    parser.add_argument("--source-root", default=None, help="Root used to store source_file as a relative path")
     parser.add_argument("--limit", type=int, default=None, help="Read only first N files for a quick test")
     parser.add_argument("--chunk-size", type=int, default=200_000, help="Rows to buffer before writing a parquet chunk")
     return parser.parse_args()
@@ -98,6 +106,7 @@ def main() -> int:
     args = parse_args()
     input_dir = Path(args.input_dir)
     output_dir = Path(args.output_dir)
+    source_root = Path(args.source_root) if args.source_root else input_dir
 
     if not input_dir.exists():
         raise FileNotFoundError(f"Input directory not found: {input_dir}")
@@ -132,7 +141,13 @@ def main() -> int:
             data = json.load(f)
         items = extract_items(data)
         for item in items:
-            rows.append(normalize_item(item, args.asset_type, str(json_file)))
+            rows.append(
+                normalize_item(
+                    item,
+                    args.asset_type,
+                    source_file_path(json_file, source_root),
+                )
+            )
             if len(rows) >= args.chunk_size:
                 flush_buffer()
         item_count += len(items)

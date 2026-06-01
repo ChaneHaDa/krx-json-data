@@ -19,6 +19,7 @@ Git LFS 추적 대상:
 Price/**/*.json
 Index/**/*.json
 AdjustedPrice/**/*.parquet
+parquet/**/*.parquet
 ```
 
 ## config.py
@@ -32,6 +33,19 @@ sqlite를 이용하여 db를 구축할때 사용
 
 ## Parse
 json파일을 불러와서 달 평균 종가 데이터를 구성하는 코드
+
+KRX 원천 JSON을 Parquet 데이터셋으로 변환하려면 다음을 실행한다.
+
+```bash
+uv run python Parse/build_parquet_all.py --only STOCK,ETF
+```
+
+기본 출력 위치:
+
+```text
+parquet/all/stock/asset_type=STOCK/year=YYYY/month=MM/*.parquet
+parquet/all/etf/asset_type=ETF/year=YYYY/month=MM/*.parquet
+```
 
 ## AdjustedPrice
 `AdjustedPrice/get_pykrx_adjusted.py`는 pykrx의 `adjusted=True` 경로로 수정주가
@@ -71,6 +85,7 @@ AdjustedPrice/pykrx_etf_manifest.json
 
 - `Price/<ASSET_TYPE>/<YYYY>/<YYYYMMDD>.json`: KRX 일별 원천 가격 JSON
 - `Index/<ASSET_TYPE>/<YYYY>/<YYYYMMDD>.json`: KRX 일별 지수/시장 관련 JSON
+- `parquet/all/<asset_type>/asset_type=<ASSET_TYPE>/year=<YYYY>/month=<MM>/*.parquet`: KRX 원천 JSON을 변환한 Parquet 데이터셋
 - `AdjustedPrice/pykrx/source=pykrx/asset_type=<STOCK|ETF>/year=<YYYY>/month=<MM>/*.parquet`: pykrx 수정주가 Parquet 데이터셋
 - `AdjustedPrice/pykrx_*_manifest.json`: 수정주가 수집 성공/실패 manifest
 

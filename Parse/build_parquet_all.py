@@ -59,6 +59,8 @@ def main() -> int:
             str(output_dir),
             "--asset-type",
             asset_type,
+            "--source-root",
+            str(repo_root),
             "--chunk-size",
             str(args.chunk_size),
         ]
