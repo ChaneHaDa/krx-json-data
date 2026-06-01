@@ -6,6 +6,13 @@ uv로 필요한 패키지를 설치한다.
 uv sync
 ```
 
+데이터 파일은 Git LFS로 관리한다. 처음 clone한 환경에서는 다음을 먼저 실행한다.
+
+```bash
+git lfs install
+git lfs pull
+```
+
 ## config.py
 ```python
 API_KEY ="여기에 키를 입력하세요~"
@@ -29,7 +36,8 @@ uv run python AdjustedPrice/get_pykrx_adjusted.py \
   --tickers 069500,360750,453850,114260,411060,160580 \
   --ticker-names-file configs/tickers/all_weather_kr_etf.csv \
   --asset-type ETF \
-  --overwrite \
+  --overwrite-asset-type \
+  --sleep-seconds 0.6 \
   --allow-partial
 ```
 
@@ -38,6 +46,14 @@ uv run python AdjustedPrice/get_pykrx_adjusted.py \
 ```text
 AdjustedPrice/pykrx/source=pykrx/asset_type=ETF/year=YYYY/month=MM/*.parquet
 AdjustedPrice/pykrx_manifest.json
+```
+
+STOCK과 ETF를 같은 `AdjustedPrice/pykrx` 데이터셋에 함께 저장할 때는
+`--overwrite-asset-type`을 사용하고 manifest는 asset별로 분리한다.
+
+```text
+AdjustedPrice/pykrx_stock_manifest.json
+AdjustedPrice/pykrx_etf_manifest.json
 ```
 
 `Price/*` 폴더는 KRX 원천 JSON이고, `AdjustedPrice/pykrx`는 pykrx/Naver

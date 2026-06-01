@@ -176,18 +176,25 @@ def write_adjusted_prices(
     *,
     output_dir: Path,
     overwrite: bool = False,
+    overwrite_asset_type: bool = False,
     append: bool = False,
 ) -> int:
     if not frames:
         return 0
+    adjusted_prices = pd.concat(frames, ignore_index=True)[OUTPUT_COLUMNS]
     if output_dir.exists():
         if overwrite:
             shutil.rmtree(output_dir)
+        elif overwrite_asset_type:
+            for source in adjusted_prices["source"].dropna().astype(str).unique():
+                for asset_type in adjusted_prices["asset_type"].dropna().astype(str).unique():
+                    partition_dir = output_dir / f"source={source}" / f"asset_type={asset_type}"
+                    if partition_dir.exists():
+                        shutil.rmtree(partition_dir)
         elif not append:
             raise FileExistsError(f"Output directory already exists: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    adjusted_prices = pd.concat(frames, ignore_index=True)[OUTPUT_COLUMNS]
     adjusted_prices.to_parquet(
         output_dir,
         engine="pyarrow",
@@ -210,6 +217,7 @@ def build_adjusted_prices(
     sleep_seconds: float = 0.25,
     retry_count: int = 2,
     overwrite: bool = False,
+    overwrite_asset_type: bool = False,
     allow_partial: bool = False,
 ) -> int:
     result = build_frames(
@@ -238,6 +246,7 @@ def build_adjusted_prices(
         result.frames,
         output_dir=output_dir,
         overwrite=overwrite,
+        overwrite_asset_type=overwrite_asset_type,
         append=False,
     )
     write_manifest(
@@ -318,6 +327,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sleep-seconds", type=float, default=0.25)
     parser.add_argument("--retry-count", type=int, default=2)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--overwrite-asset-type", action="store_true")
     parser.add_argument("--allow-partial", action="store_true")
     return parser
 
@@ -336,6 +346,7 @@ def main() -> int:
         sleep_seconds=args.sleep_seconds,
         retry_count=args.retry_count,
         overwrite=args.overwrite,
+        overwrite_asset_type=args.overwrite_asset_type,
         allow_partial=args.allow_partial,
     )
     print(f"Done. rows={rows}, output={args.output_dir}")

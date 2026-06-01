@@ -132,6 +132,50 @@ class AdjustedPricePykrxTests(unittest.TestCase):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertIn("069500", manifest["failures"])
 
+    def test_overwrite_asset_type_keeps_other_asset_type_partitions(self):
+        stock_frame = pd.DataFrame(
+            {"종가": [1000]},
+            index=pd.Index([pd.Timestamp("2024-01-02")], name="날짜"),
+        )
+        etf_frame = pd.DataFrame(
+            {"종가": [2000]},
+            index=pd.Index([pd.Timestamp("2024-01-02")], name="날짜"),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "AdjustedPrice" / "pykrx"
+
+            adjusted.write_adjusted_prices(
+                [
+                    adjusted.normalize_pykrx_ohlcv(
+                        stock_frame,
+                        ticker="005930",
+                        name="Samsung Electronics",
+                        asset_type="STOCK",
+                        source_loaded_at="2026-06-01T00:00:00+00:00",
+                    )
+                ],
+                output_dir=output_dir,
+            )
+
+            adjusted.write_adjusted_prices(
+                [
+                    adjusted.normalize_pykrx_ohlcv(
+                        etf_frame,
+                        ticker="069500",
+                        name="KODEX 200",
+                        asset_type="ETF",
+                        source_loaded_at="2026-06-01T00:00:00+00:00",
+                    )
+                ],
+                output_dir=output_dir,
+                overwrite_asset_type=True,
+            )
+
+            written = pd.read_parquet(output_dir)
+            self.assertEqual(set(written["asset_type"].astype(str)), {"STOCK", "ETF"})
+            self.assertEqual(set(written["ticker"].astype(str)), {"005930", "069500"})
+
 
 if __name__ == "__main__":
     unittest.main()
