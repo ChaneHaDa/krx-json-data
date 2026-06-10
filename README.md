@@ -22,6 +22,22 @@ AdjustedPrice/**/*.parquet
 parquet/**/*.parquet
 ```
 
+## 전체 데이터 업데이트
+
+KRX 원천 JSON과 pykrx 수정주가를 한 번에 갱신하려면 다음을 실행한다.
+
+```bash
+uv run python update_all_data.py
+```
+
+커밋과 푸시까지 한 번에 처리하려면 명시적으로 옵션을 붙인다.
+
+```bash
+uv run python update_all_data.py --commit --push
+```
+
+특정 종료일 기준으로 갱신하려면 `--to YYYYMMDD`를 사용한다.
+
 ## config.py
 ```python
 API_KEY ="여기에 키를 입력하세요~"
