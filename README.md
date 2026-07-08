@@ -38,6 +38,9 @@ uv run python update_all_data.py --commit --push
 
 특정 종료일 기준으로 갱신하려면 `--to YYYYMMDD`를 사용한다.
 
+Ubuntu 서버에서 cron으로 매일 갱신하려면
+[Ubuntu cron daily update](docs/ubuntu-cron-update.md)를 참고한다.
+
 ## config.py
 ```python
 API_KEY ="여기에 키를 입력하세요~"
