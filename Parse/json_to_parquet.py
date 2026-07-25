@@ -91,6 +91,26 @@ def iter_json_files(input_dir: Path, limit: Optional[int]) -> Iterable[Path]:
     return files
 
 
+def converted_source_files(output_dir: Path) -> set:
+    """Return source_file values already present in an output dataset.
+
+    Writes always append, so re-converting a JSON file would duplicate every
+    row it produced. Incremental runs use this to skip files already stored.
+    """
+    if not output_dir.exists():
+        return set()
+
+    import pyarrow.compute as pc
+    import pyarrow.parquet as pq
+
+    try:
+        table = pq.read_table(str(output_dir), columns=["source_file"])
+    except (OSError, ValueError, KeyError):
+        return set()
+    unique = pc.unique(table.column("source_file").combine_chunks())
+    return {value for value in unique.to_pylist() if value}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Convert KRX JSON files to partitioned Parquet files")
     parser.add_argument("--input-dir", required=True, help="Input directory that contains JSON files")
@@ -99,6 +119,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-root", default=None, help="Root used to store source_file as a relative path")
     parser.add_argument("--limit", type=int, default=None, help="Read only first N files for a quick test")
     parser.add_argument("--chunk-size", type=int, default=200_000, help="Rows to buffer before writing a parquet chunk")
+    parser.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Skip JSON files already present in the output dataset",
+    )
     return parser.parse_args()
 
 
@@ -135,32 +160,35 @@ def main() -> int:
         chunk_count += 1
         rows.clear()
 
+    already_converted = converted_source_files(output_dir) if args.incremental else set()
+    skipped_count = 0
+
     for json_file in iter_json_files(input_dir, args.limit):
+        source_file = source_file_path(json_file, source_root)
+        if source_file in already_converted:
+            skipped_count += 1
+            continue
+
         file_count += 1
         with open(json_file, "r", encoding="utf-8") as f:
             data = json.load(f)
         items = extract_items(data)
         for item in items:
-            rows.append(
-                normalize_item(
-                    item,
-                    args.asset_type,
-                    source_file_path(json_file, source_root),
-                )
-            )
+            rows.append(normalize_item(item, args.asset_type, source_file))
             if len(rows) >= args.chunk_size:
                 flush_buffer()
         item_count += len(items)
 
     if item_count == 0:
-        print("No rows found. Nothing to write.")
+        print(f"No rows found. Nothing to write. skipped={skipped_count}")
         return 0
 
     if rows:
         flush_buffer()
 
     print(
-        f"Done. files={file_count}, rows={item_count}, chunks={chunk_count}, output={output_dir}"
+        f"Done. files={file_count}, skipped={skipped_count}, rows={item_count}, "
+        f"chunks={chunk_count}, output={output_dir}"
     )
     return 0
 

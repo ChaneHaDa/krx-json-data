@@ -278,6 +278,7 @@ def build_adjusted_prices(
     append: bool = False,
     allow_partial: bool = False,
 ) -> int:
+    previous_manifest = read_manifest(manifest_path)
     result = build_frames(
         tickers,
         from_date=from_date,
@@ -296,6 +297,7 @@ def build_adjusted_prices(
                 failures=result.failures,
                 from_date=from_date,
                 to_date=to_date,
+                previous=previous_manifest,
             ),
         )
         raise RuntimeError(f"Failed to fetch {len(result.failures)} ticker(s)")
@@ -314,9 +316,19 @@ def build_adjusted_prices(
             failures=result.failures,
             from_date=from_date,
             to_date=to_date,
+            previous=previous_manifest,
         ),
     )
     return rows
+
+
+def read_manifest(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 def make_manifest(
@@ -325,6 +337,7 @@ def make_manifest(
     failures: list[dict[str, object]],
     from_date: str,
     to_date: str,
+    previous: Optional[dict[str, object]] = None,
 ) -> dict[str, object]:
     successful_tickers: dict[str, dict[str, object]] = {}
     completed_at = utc_now_iso()
@@ -338,10 +351,27 @@ def make_manifest(
                 "rows": int(count),
                 "completed_at": completed_at,
             }
+
+    previous_failures = (previous or {}).get("failures", {}) or {}
+    failure_entries: dict[str, dict[str, object]] = {}
+    for item in failures:
+        ticker = str(item.get("ticker") or "")
+        if not ticker:
+            continue
+        entry = dict(item)
+        prior = previous_failures.get(ticker, {})
+        prior_streak = prior.get("consecutive_failures", 0) if isinstance(prior, dict) else 0
+        try:
+            streak = int(prior_streak)
+        except (TypeError, ValueError):
+            streak = 0
+        entry["consecutive_failures"] = streak + 1
+        failure_entries[ticker] = entry
+
     return {
         "version": 1,
         "successful_tickers": successful_tickers,
-        "failures": {str(item["ticker"]): item for item in failures if item.get("ticker")},
+        "failures": failure_entries,
     }
 
 

@@ -11,16 +11,20 @@ from zoneinfo import ZoneInfo
 DATE_FORMAT = "%Y%m%d"
 JSON_SCRIPT = Path("update_json_data.py")
 ADJUSTED_SCRIPT = Path("AdjustedPrice/get_pykrx_adjusted.py")
+PARQUET_SCRIPT = Path("Parse/build_parquet_all.py")
+PARQUET_ASSET_TYPES = "STOCK,ETF"
 STOCK_MANIFEST = Path("AdjustedPrice/pykrx_stock_manifest.json")
 ETF_MANIFEST = Path("AdjustedPrice/pykrx_etf_manifest.json")
 ETF_NAMES_FILE = Path("configs/tickers/all_weather_kr_etf.csv")
 ADJUSTED_OUTPUT = Path("AdjustedPrice/pykrx")
+RETIRE_AFTER_FAILURES = 3
 DATA_STAGE_PATHS = [
     "Price",
     "Index",
     "AdjustedPrice/pykrx",
     "AdjustedPrice/pykrx_stock_manifest.json",
     "AdjustedPrice/pykrx_etf_manifest.json",
+    "parquet",
 ]
 
 
@@ -50,14 +54,40 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Push HEAD after committing or when already ahead.",
     )
+    parser.add_argument(
+        "--skip-parquet",
+        action="store_true",
+        help="Skip the incremental parquet/all rebuild from KRX JSON.",
+    )
     parser.add_argument("--sleep-seconds", type=float, default=0.25)
     parser.add_argument("--retry-count", type=int, default=0)
     return parser
 
 
-def manifest_tickers(path: Path) -> list[str]:
+def failure_streak(entry: object) -> int:
+    if not isinstance(entry, dict):
+        return 1
+    try:
+        return int(entry.get("consecutive_failures", 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def manifest_tickers(path: Path, *, retire_after: int = RETIRE_AFTER_FAILURES) -> list[str]:
+    """Return the ticker universe recorded in a manifest.
+
+    Recent failures stay in the universe. The collector rewrites the manifest on
+    every run, so reading only ``successful_tickers`` would drop a ticker the
+    first time it fails, even for a transient error. Tickers that keep failing
+    for ``retire_after`` consecutive runs are dropped, which is how delisted
+    tickers leave the universe.
+    """
     data = json.loads(path.read_text(encoding="utf-8"))
-    return sorted(data.get("successful_tickers", {}).keys())
+    tickers = set(data.get("successful_tickers", {}))
+    for ticker, entry in (data.get("failures", {}) or {}).items():
+        if failure_streak(entry) < retire_after:
+            tickers.add(ticker)
+    return sorted(tickers)
 
 
 def format_command_for_display(command: list[str]) -> str:
@@ -78,6 +108,16 @@ def run_command(command: list[str], *, dry_run: bool = False) -> None:
 
 def json_command(to_date: str) -> list[str]:
     return [sys.executable, str(JSON_SCRIPT), "--to", to_date]
+
+
+def parquet_command(asset_types: str = PARQUET_ASSET_TYPES) -> list[str]:
+    return [
+        sys.executable,
+        str(PARQUET_SCRIPT),
+        "--only",
+        asset_types,
+        "--incremental",
+    ]
 
 
 def adjusted_command(
@@ -136,6 +176,20 @@ def failure_summary(asset_type: str, manifest_path: Path) -> str:
     return f"{asset_type} failures: {','.join(failures)}"
 
 
+def retired_summary(
+    asset_type: str, manifest_path: Path, *, retire_after: int = RETIRE_AFTER_FAILURES
+) -> str:
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    retired = sorted(
+        ticker
+        for ticker, entry in (data.get("failures", {}) or {}).items()
+        if failure_streak(entry) >= retire_after
+    )
+    if not retired:
+        return f"{asset_type} retired: none"
+    return f"{asset_type} retired after {retire_after} runs: {','.join(retired)}"
+
+
 def latest_adjusted_date(asset_type: str) -> str:
     import pandas as pd
 
@@ -149,6 +203,19 @@ def latest_adjusted_date(asset_type: str) -> str:
     if pd.isna(latest):
         return "none"
     return latest.strftime(DATE_FORMAT)
+
+
+def latest_parquet_date(name: str) -> str:
+    import pandas as pd
+
+    partition = Path("parquet/all") / name
+    if not partition.exists():
+        return "none"
+    data = pd.read_parquet(partition, columns=["basDt"])
+    if data.empty:
+        return "none"
+    latest = data["basDt"].dropna().astype(str).max()
+    return latest or "none"
 
 
 def stage_data_changes() -> None:
@@ -181,8 +248,12 @@ def print_summary() -> None:
     print(f"Latest KRX JSON date: {latest_json_date()}")
     print(f"Latest STOCK adjusted date: {latest_adjusted_date('STOCK')}")
     print(f"Latest ETF adjusted date: {latest_adjusted_date('ETF')}")
+    print(f"Latest STOCK parquet date: {latest_parquet_date('stock')}")
+    print(f"Latest ETF parquet date: {latest_parquet_date('etf')}")
     print(failure_summary("STOCK", STOCK_MANIFEST))
     print(failure_summary("ETF", ETF_MANIFEST))
+    print(retired_summary("STOCK", STOCK_MANIFEST))
+    print(retired_summary("ETF", ETF_MANIFEST))
 
 
 def main() -> int:
@@ -220,6 +291,9 @@ def main() -> int:
             ),
             dry_run=args.dry_run,
         )
+
+        if not args.skip_parquet:
+            run_command(parquet_command(), dry_run=args.dry_run)
 
         if not args.dry_run:
             print_summary()

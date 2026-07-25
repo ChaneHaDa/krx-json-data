@@ -27,6 +27,57 @@ class UpdateAllDataTests(unittest.TestCase):
 
             self.assertEqual(update_all_data.manifest_tickers(path), ["000660", "005930"])
 
+    def test_manifest_tickers_keeps_failed_tickers_in_the_universe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "successful_tickers": {"005930": {}},
+                        "failures": {"000660": {"error": "empty result"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(update_all_data.manifest_tickers(path), ["000660", "005930"])
+
+    def test_manifest_tickers_retires_tickers_that_keep_failing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "successful_tickers": {"005930": {}},
+                        "failures": {
+                            "000660": {"error": "network down", "consecutive_failures": 2},
+                            "257990": {"error": "empty result", "consecutive_failures": 3},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                update_all_data.manifest_tickers(path, retire_after=3),
+                ["000660", "005930"],
+            )
+
+    def test_manifest_tickers_deduplicates_across_sections(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "successful_tickers": {"005930": {}},
+                        "failures": {"005930": {"error": "empty result"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(update_all_data.manifest_tickers(path), ["005930"])
+
     def test_adjusted_command_uses_incremental_manifest_and_partial_flags(self):
         command = update_all_data.adjusted_command(
             script=Path("AdjustedPrice/get_pykrx_adjusted.py"),
@@ -44,6 +95,34 @@ class UpdateAllDataTests(unittest.TestCase):
         self.assertIn("--to-date", command)
         self.assertIn("20260610", command)
         self.assertIn("005930,000660", command)
+
+    def test_parquet_command_is_incremental_and_scoped(self):
+        command = update_all_data.parquet_command()
+
+        self.assertEqual(command[1], "Parse/build_parquet_all.py")
+        self.assertIn("--incremental", command)
+        self.assertIn("--only", command)
+        self.assertIn("STOCK,ETF", command)
+
+    def test_retired_summary_lists_only_tickers_past_the_threshold(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "failures": {
+                            "000660": {"consecutive_failures": 2},
+                            "257990": {"consecutive_failures": 3},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                update_all_data.retired_summary("STOCK", path, retire_after=3),
+                "STOCK retired after 3 runs: 257990",
+            )
 
     def test_failure_summary_formats_empty_and_non_empty_failures(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -78,6 +157,7 @@ class UpdateAllDataTests(unittest.TestCase):
                 "AdjustedPrice/pykrx",
                 "AdjustedPrice/pykrx_stock_manifest.json",
                 "AdjustedPrice/pykrx_etf_manifest.json",
+                "parquet",
             ],
         )
 

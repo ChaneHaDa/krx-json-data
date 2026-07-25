@@ -24,11 +24,14 @@ parquet/**/*.parquet
 
 ## 전체 데이터 업데이트
 
-KRX 원천 JSON과 pykrx 수정주가를 한 번에 갱신하려면 다음을 실행한다.
+KRX 원천 JSON과 pykrx 수정주가, `parquet/all` 데이터셋을 한 번에 갱신하려면 다음을
+실행한다.
 
 ```bash
 uv run python update_all_data.py
 ```
+
+parquet 변환 단계를 건너뛰려면 `--skip-parquet`를 붙인다.
 
 커밋과 푸시까지 한 번에 처리하려면 명시적으로 옵션을 붙인다.
 
@@ -56,8 +59,12 @@ json파일을 불러와서 달 평균 종가 데이터를 구성하는 코드
 KRX 원천 JSON을 Parquet 데이터셋으로 변환하려면 다음을 실행한다.
 
 ```bash
-uv run python Parse/build_parquet_all.py --only STOCK,ETF
+uv run python Parse/build_parquet_all.py --only STOCK,ETF --incremental
 ```
+
+변환은 항상 append이므로 `--incremental` 없이 다시 돌리면 기존 행이 그대로 중복된다.
+`--incremental`은 출력 데이터셋의 `source_file` 값을 읽어 이미 변환한 JSON을 건너뛴다.
+`update_all_data.py`는 이 옵션으로 변환 단계를 실행한다.
 
 기본 출력 위치:
 
@@ -123,6 +130,17 @@ AdjustedPrice/pykrx_etf_manifest.json
 - `parquet/all/<asset_type>/asset_type=<ASSET_TYPE>/year=<YYYY>/month=<MM>/*.parquet`: KRX 원천 JSON을 변환한 Parquet 데이터셋
 - `AdjustedPrice/pykrx/source=pykrx/asset_type=<STOCK|ETF>/year=<YYYY>/month=<MM>/*.parquet`: pykrx 수정주가 Parquet 데이터셋
 - `AdjustedPrice/pykrx_*_manifest.json`: 수정주가 수집 성공/실패 manifest
+
+## 수정주가 티커 유니버스
+
+`update_all_data.py`는 다음 실행의 티커 목록을 manifest에서 읽는다. manifest는 매 실행
+전체가 새로 쓰이므로, `successful_tickers`만 읽으면 한 번 실패한 티커가 영구히 목록에서
+사라진다. 그래서 `failures`도 유니버스에 포함하되, `consecutive_failures`가
+`RETIRE_AFTER_FAILURES`(기본 3) 회 이상 쌓인 티커는 제외한다.
+
+- 일시적 오류: 다음 실행에서 다시 시도되고, 성공하면 카운터가 0으로 돌아간다
+- 상장폐지: 3회 연속 실패 후 유니버스에서 빠지며, `STOCK retired after 3 runs: ...`
+  요약 줄에 남는다
 
 JSON과 Parquet 데이터 파일은 저장소에는 LFS 포인터로 올라가며, 실제 데이터는
 `git lfs pull`로 내려받는다. manifest와 수집 스크립트는 일반 Git 파일로 관리한다.

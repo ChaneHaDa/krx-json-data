@@ -17,6 +17,7 @@ Index
 AdjustedPrice/pykrx
 AdjustedPrice/pykrx_stock_manifest.json
 AdjustedPrice/pykrx_etf_manifest.json
+parquet
 ```
 
 ## Prerequisites
@@ -170,8 +171,11 @@ git log -1 --oneline
 
 Expected signs:
 
-- The log includes `Latest KRX JSON date`, `Latest STOCK adjusted date`, and
-  `Latest ETF adjusted date`.
+- The log includes `Latest KRX JSON date`, `Latest STOCK adjusted date`,
+  `Latest ETF adjusted date`, and the two `Latest * parquet date` lines.
+- The log includes `STOCK retired` and `ETF retired`. A ticker listed there has
+  failed `RETIRE_AFTER_FAILURES` consecutive runs and has left the collection
+  universe, which is expected for delisted tickers and worth checking otherwise.
 - `uv run python -m unittest discover -s tests` exits with `OK`.
 - `git status -sb` has no local-only commit after a successful push.
 - `git log -1 --oneline` shows the newest `data: update all krx datasets for
@@ -225,7 +229,9 @@ exits cleanly if the previous run has not finished.
 
 `update_all_data.py` runs adjusted-price collection with `--allow-partial`.
 Successful tickers are still written, and failures are listed in the manifest
-summary. Re-run the wrapper later, or inspect:
+summary. A failing ticker stays in the collection universe and is retried on the
+next run; it is dropped only after `RETIRE_AFTER_FAILURES` consecutive failures.
+Re-run the wrapper later, or inspect:
 
 ```bash
 jq '.failures' AdjustedPrice/pykrx_stock_manifest.json

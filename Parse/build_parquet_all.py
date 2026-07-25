@@ -27,6 +27,11 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Comma-separated asset types to run (e.g. STOCK,ETF,ETN)",
     )
+    parser.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Skip JSON files already present in each output dataset",
+    )
     return parser.parse_args()
 
 
@@ -66,6 +71,8 @@ def main() -> int:
         ]
         if args.limit is not None:
             cmd.extend(["--limit", str(args.limit)])
+        if args.incremental:
+            cmd.append("--incremental")
 
         print(f"[run] {asset_type} <- {input_rel}")
         subprocess.run(cmd, check=True, cwd=repo_root)

@@ -108,6 +108,68 @@ class AdjustedPricePykrxTests(unittest.TestCase):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertIn("069500", manifest["failures"])
             self.assertEqual(manifest["failures"]["069500"]["error"], "empty result")
+            self.assertEqual(manifest["failures"]["069500"]["consecutive_failures"], 1)
+
+    def test_repeated_failures_increment_the_consecutive_counter(self):
+        def empty_fetcher(from_date, to_date, ticker):
+            return pd.DataFrame()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = root / "AdjustedPrice" / "pykrx_manifest.json"
+
+            for expected in (1, 2, 3):
+                with self.assertRaises(RuntimeError):
+                    adjusted.build_adjusted_prices(
+                        ["069500"],
+                        from_date="20240101",
+                        to_date="20240103",
+                        output_dir=root / "AdjustedPrice" / "pykrx",
+                        manifest_path=manifest_path,
+                        fetcher=empty_fetcher,
+                        sleep_seconds=0,
+                    )
+
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                self.assertEqual(
+                    manifest["failures"]["069500"]["consecutive_failures"], expected
+                )
+
+    def test_a_successful_run_clears_the_failure_streak(self):
+        frame = pd.DataFrame(
+            {"종가": [1000]},
+            index=pd.Index([pd.Timestamp("2024-01-02")], name="날짜"),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_dir = root / "AdjustedPrice" / "pykrx"
+            manifest_path = root / "AdjustedPrice" / "pykrx_manifest.json"
+
+            with self.assertRaises(RuntimeError):
+                adjusted.build_adjusted_prices(
+                    ["069500"],
+                    from_date="20240101",
+                    to_date="20240103",
+                    output_dir=output_dir,
+                    manifest_path=manifest_path,
+                    fetcher=lambda from_date, to_date, ticker: pd.DataFrame(),
+                    sleep_seconds=0,
+                )
+
+            adjusted.build_adjusted_prices(
+                ["069500"],
+                from_date="20240101",
+                to_date="20240103",
+                output_dir=output_dir,
+                manifest_path=manifest_path,
+                fetcher=lambda from_date, to_date, ticker: frame,
+                sleep_seconds=0,
+            )
+
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["failures"], {})
+            self.assertIn("069500", manifest["successful_tickers"])
 
     def test_allow_partial_still_fails_when_no_tickers_succeed(self):
         def failing_fetcher(from_date, to_date, ticker):
