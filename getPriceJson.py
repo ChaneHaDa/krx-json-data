@@ -9,8 +9,10 @@ import time
 from datetime import datetime, timedelta
 import sys
 
-BASE_URL = "http://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService"
-BASE_URLE = "http://apis.data.go.kr/1160100/service/GetSecuritiesProductInfoService"
+BASE_URL = "https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService"
+BASE_URLE = "https://apis.data.go.kr/1160100/service/GetSecuritiesProductInfoService"
+# (connect, read) 초. 없으면 무응답 서버에서 무한 대기한다.
+REQUEST_TIMEOUT = (10, 60)
 STOCK_BASE_URL = (
     BASE_URL
     + "/getStockPriceInfo"
@@ -55,7 +57,7 @@ def savedata(date, file_paths, url):
 
 def get_obj(date, url):
     time.sleep(0.3)
-    result = requests.get(url, verify=False).text
+    result = requests.get(url, timeout=REQUEST_TIMEOUT).text
     data = json.loads(result)
     return data
 

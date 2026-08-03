@@ -7,7 +7,9 @@ import time
 from datetime import datetime, timedelta
 import sys
 
-BASE_URL = "http://apis.data.go.kr/1160100/service/GetMarketIndexInfoService"
+BASE_URL = "https://apis.data.go.kr/1160100/service/GetMarketIndexInfoService"
+# (connect, read) 초. 없으면 무응답 서버에서 무한 대기한다.
+REQUEST_TIMEOUT = (10, 60)
 STOCK_BASE_URL = BASE_URL + "/getStockMarketIndex"
 BOND_BASE_URL = BASE_URL + "/getBondMarketIndex"
 DP_BASE_URL = BASE_URL + "/getDerivationProductMarketIndex"
@@ -35,7 +37,7 @@ def get_obj(date, url, serviceKey=config.API_KEY):
         "basDt": date,
     }
 
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
     data = json.loads(response.text)
 
     return data
@@ -45,7 +47,6 @@ def get_datas(start, last):
     # 시작일, 종료일 datetime 으로 변환
     start_date = datetime.strptime(start, "%Y%m%d")
     last_date = datetime.strptime(last, "%Y%m%d")
-    url = "http://apis.data.go.kr/1160100/service/GetMarketIndexInfoService/getBondMarketIndex"
 
     # 종료일까지 반복
     while start_date <= last_date:
