@@ -1,5 +1,7 @@
 import json
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -95,6 +97,11 @@ class UpdateAllDataTests(unittest.TestCase):
         self.assertIn("--to-date", command)
         self.assertIn("20260610", command)
         self.assertIn("005930,000660", command)
+        self.assertIn("--progress-every", command)
+        self.assertEqual(
+            command[command.index("--progress-every") + 1],
+            str(update_all_data.PROGRESS_EVERY),
+        )
 
     def test_parquet_command_is_incremental_and_scoped(self):
         command = update_all_data.parquet_command()
@@ -160,6 +167,65 @@ class UpdateAllDataTests(unittest.TestCase):
                 "parquet",
             ],
         )
+
+    def test_branch_is_ahead_counts_commits_instead_of_matching_status_text(self):
+        calls = []
+
+        def fake_run(command, **kwargs):
+            calls.append(command)
+            return Mock(returncode=0, stdout="2\n")
+
+        with patch.object(update_all_data.subprocess, "run", side_effect=fake_run):
+            self.assertTrue(update_all_data.branch_is_ahead())
+
+        self.assertEqual(calls[0], ["git", "rev-list", "--count", "@{u}..HEAD"])
+
+    def test_branch_is_ahead_is_false_without_commits_or_upstream(self):
+        with patch.object(
+            update_all_data.subprocess, "run", return_value=Mock(returncode=0, stdout="0\n")
+        ):
+            self.assertFalse(update_all_data.branch_is_ahead())
+
+        # No upstream: rev-list exits non-zero, so there is nothing to push.
+        with patch.object(
+            update_all_data.subprocess, "run", return_value=Mock(returncode=128, stdout="")
+        ):
+            self.assertFalse(update_all_data.branch_is_ahead())
+
+    def test_branch_is_ahead_ignores_paths_that_contain_the_word_ahead(self):
+        # The old implementation grepped `git status -sb` output, so a file named
+        # like this made it report a commit that does not exist.
+        with patch.object(
+            update_all_data.subprocess,
+            "run",
+            return_value=Mock(returncode=0, stdout="0\n"),
+        ):
+            self.assertFalse(update_all_data.branch_is_ahead())
+
+    def test_verify_api_key_rejects_a_config_module_without_a_key(self):
+        module = types.ModuleType("config")
+        module.__file__ = "/somewhere/site-packages/config/__init__.py"
+
+        with patch.dict(sys.modules, {"config": module}):
+            with self.assertRaises(SystemExit) as caught:
+                update_all_data.verify_api_key()
+
+        self.assertIn("API_KEY", str(caught.exception))
+
+    def test_verify_api_key_rejects_a_blank_key(self):
+        module = types.ModuleType("config")
+        module.API_KEY = "   "
+
+        with patch.dict(sys.modules, {"config": module}):
+            with self.assertRaises(SystemExit):
+                update_all_data.verify_api_key()
+
+    def test_verify_api_key_accepts_a_configured_key(self):
+        module = types.ModuleType("config")
+        module.API_KEY = "a-real-service-key"
+
+        with patch.dict(sys.modules, {"config": module}):
+            update_all_data.verify_api_key()
 
     def test_format_command_for_display_abbreviates_ticker_lists(self):
         command = [

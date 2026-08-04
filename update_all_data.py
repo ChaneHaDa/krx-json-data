@@ -18,6 +18,9 @@ ETF_MANIFEST = Path("AdjustedPrice/pykrx_etf_manifest.json")
 ETF_NAMES_FILE = Path("configs/tickers/all_weather_kr_etf.csv")
 ADJUSTED_OUTPUT = Path("AdjustedPrice/pykrx")
 RETIRE_AFTER_FAILURES = 3
+# Adjusted-price collection is the long stage. Without progress output a stalled
+# run and a healthy one look identical in a cron log.
+PROGRESS_EVERY = 250
 DATA_STAGE_PATHS = [
     "Price",
     "Index",
@@ -30,6 +33,33 @@ DATA_STAGE_PATHS = [
 
 def today_kst() -> str:
     return datetime.now(ZoneInfo("Asia/Seoul")).strftime(DATE_FORMAT)
+
+
+def verify_api_key() -> None:
+    """Fail with a readable message when the KRX API key is not configured.
+
+    ``config.py`` is gitignored, so a fresh clone does not have one. It cannot
+    be caught by a plain ImportError either: ``config`` is also a PyPI package
+    listed in pyproject.toml, so ``import config`` still succeeds and the run
+    only dies later inside a collector with ``AttributeError: module 'config'
+    has no attribute 'API_KEY'``. Check it up front so an unattended run says
+    what is actually wrong.
+    """
+    try:
+        import config
+    except ImportError as exc:
+        raise SystemExit(
+            "config.py not found. Create it next to update_all_data.py with:\n"
+            '    API_KEY = "<your data.go.kr service key>"'
+        ) from exc
+
+    api_key = getattr(config, "API_KEY", "")
+    if not isinstance(api_key, str) or not api_key.strip():
+        raise SystemExit(
+            f"config imported from {getattr(config, '__file__', '<unknown>')} has no usable "
+            "API_KEY.\nCreate config.py next to update_all_data.py with:\n"
+            '    API_KEY = "<your data.go.kr service key>"'
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -130,6 +160,7 @@ def adjusted_command(
     sleep_seconds: float,
     retry_count: int,
     ticker_names_file: Path | None = None,
+    progress_every: int = PROGRESS_EVERY,
 ) -> list[str]:
     command = [
         sys.executable,
@@ -148,6 +179,8 @@ def adjusted_command(
         "--retry-count",
         str(retry_count),
         "--allow-partial",
+        "--progress-every",
+        str(progress_every),
     ]
     if ticker_names_file is not None:
         command.extend(["--ticker-names-file", str(ticker_names_file)])
@@ -227,8 +260,21 @@ def has_staged_changes() -> bool:
 
 
 def branch_is_ahead() -> bool:
-    result = subprocess.run(["git", "status", "-sb"], check=True, capture_output=True, text=True)
-    return "ahead" in result.stdout
+    """Return whether HEAD has commits the upstream branch does not.
+
+    ``git status -sb`` also lists changed file paths, so searching its output
+    for "ahead" matches any path that happens to contain that word. Count the
+    commits instead. A missing upstream makes rev-list fail, which means there
+    is nothing to push.
+    """
+    result = subprocess.run(
+        ["git", "rev-list", "--count", "@{u}..HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False
+    return int(result.stdout.strip() or "0") > 0
 
 
 def commit_data(to_date: str) -> bool:
@@ -259,6 +305,8 @@ def print_summary() -> None:
 def main() -> int:
     args = build_parser().parse_args()
     to_date = args.to or today_kst()
+
+    verify_api_key()
 
     try:
         run_command(json_command(to_date), dry_run=args.dry_run)

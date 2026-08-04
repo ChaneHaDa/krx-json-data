@@ -120,12 +120,19 @@ def build_frames(
     fetcher: Callable[[str, str, str], pd.DataFrame] = fetch_adjusted_ohlcv,
     sleep_seconds: float = 0.25,
     retry_count: int = 2,
+    progress_every: int = 0,
 ) -> BuildResult:
     loaded_at = utc_now_iso()
     frames: list[pd.DataFrame] = []
     failures: list[dict[str, object]] = []
+    total = len(tickers)
 
     for index, ticker in enumerate(tickers):
+        if progress_every > 0 and index % progress_every == 0:
+            print(
+                f"[{asset_type}] {index}/{total} tickers, {len(failures)} failed",
+                flush=True,
+            )
         last_error: Optional[Exception] = None
         raw = pd.DataFrame()
         for attempt in range(retry_count + 1):
@@ -167,6 +174,9 @@ def build_frames(
 
         if sleep_seconds > 0 and index < len(tickers) - 1:
             sleep(sleep_seconds)
+
+    if progress_every > 0:
+        print(f"[{asset_type}] {total}/{total} tickers, {len(failures)} failed", flush=True)
 
     return BuildResult(frames=frames, failures=failures)
 
@@ -277,6 +287,7 @@ def build_adjusted_prices(
     overwrite_asset_type: bool = False,
     append: bool = False,
     allow_partial: bool = False,
+    progress_every: int = 0,
 ) -> int:
     previous_manifest = read_manifest(manifest_path)
     result = build_frames(
@@ -288,6 +299,7 @@ def build_adjusted_prices(
         fetcher=fetcher,
         sleep_seconds=sleep_seconds,
         retry_count=retry_count,
+        progress_every=progress_every,
     )
     if result.failures and (not allow_partial or not result.frames):
         write_manifest(
@@ -422,6 +434,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Append from the latest stored date plus one day",
     )
     parser.add_argument("--allow-partial", action="store_true")
+    parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=0,
+        help="Print a progress line every N tickers. 0 disables progress output.",
+    )
     return parser
 
 
@@ -453,6 +471,7 @@ def main() -> int:
         overwrite_asset_type=args.overwrite_asset_type,
         append=args.incremental,
         allow_partial=args.allow_partial,
+        progress_every=args.progress_every,
     )
     print(f"Done. rows={rows}, output={args.output_dir}, range={from_date}..{to_date}")
     return 0

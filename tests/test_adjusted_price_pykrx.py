@@ -1,4 +1,6 @@
+import contextlib
 import importlib.util
+import io
 import json
 import sys
 import tempfile
@@ -17,6 +19,54 @@ SPEC.loader.exec_module(adjusted)
 
 
 class AdjustedPricePykrxTests(unittest.TestCase):
+    def test_build_frames_reports_progress_when_asked(self):
+        def fetcher(from_date, to_date, ticker):
+            return pd.DataFrame(
+                {"시가": [1], "고가": [1], "저가": [1], "종가": [1], "거래량": [1], "등락률": [0.0]},
+                index=pd.Index([pd.Timestamp("2026-08-03")], name="날짜"),
+            )
+
+        with contextlib.redirect_stdout(io.StringIO()) as captured:
+            adjusted.build_frames(
+                ["A", "B", "C", "D"],
+                from_date="20260803",
+                to_date="20260803",
+                asset_type="STOCK",
+                fetcher=fetcher,
+                sleep_seconds=0,
+                retry_count=0,
+                progress_every=2,
+            )
+
+        lines = captured.getvalue().splitlines()
+        self.assertEqual(
+            lines,
+            [
+                "[STOCK] 0/4 tickers, 0 failed",
+                "[STOCK] 2/4 tickers, 0 failed",
+                "[STOCK] 4/4 tickers, 0 failed",
+            ],
+        )
+
+    def test_build_frames_stays_silent_by_default(self):
+        def fetcher(from_date, to_date, ticker):
+            return pd.DataFrame(
+                {"시가": [1], "고가": [1], "저가": [1], "종가": [1], "거래량": [1], "등락률": [0.0]},
+                index=pd.Index([pd.Timestamp("2026-08-03")], name="날짜"),
+            )
+
+        with contextlib.redirect_stdout(io.StringIO()) as captured:
+            adjusted.build_frames(
+                ["A", "B"],
+                from_date="20260803",
+                to_date="20260803",
+                fetcher=fetcher,
+                sleep_seconds=0,
+                retry_count=0,
+            )
+
+        self.assertEqual(captured.getvalue(), "")
+
     def test_normalize_pykrx_ohlcv_outputs_research_schema(self):
         frame = pd.DataFrame(
             {

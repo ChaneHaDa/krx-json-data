@@ -41,14 +41,22 @@ uv run python update_all_data.py --commit --push
 
 특정 종료일 기준으로 갱신하려면 `--to YYYYMMDD`를 사용한다.
 
-Ubuntu 서버에서 cron으로 매일 갱신하려면
+Ubuntu 서버에서 cron으로 매일 갱신하려면 `scripts/run_daily_update.sh`를 쓴다.
+이 래퍼는 pull, LFS 동기화, 테스트, 갱신, 커밋, 푸시를 순서대로 실행하고
+`flock`으로 중복 실행을 막는다. 자세한 설정은
 [Ubuntu cron daily update](docs/ubuntu-cron-update.md)를 참고한다.
+
+```bash
+scripts/run_daily_update.sh
+```
 
 ## config.py
 ```python
-API_KEY ="여기에 키를 입력하세요~"
+API_KEY = "여기에 키를 입력하세요~"
 ```
-다음과 같은 파일의 추가가 필요함
+저장소 루트에 위 파일의 추가가 필요하다. `.gitignore`에 있으므로 clone한
+환경에서는 직접 만들어야 한다. `update_all_data.py`는 수집을 시작하기 전에
+키를 확인하고, 없으면 무엇이 빠졌는지 알려주고 종료한다.
 
 ## MakeDB
 sqlite를 이용하여 db를 구축할때 사용
